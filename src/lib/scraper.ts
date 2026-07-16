@@ -514,7 +514,7 @@ ${context.pageText.slice(0, 2000)}
       name: parsed.name || context.handle,
       platform: context.platform,
       platform_handle: context.handle,
-      platform_url: context.url,
+      platform_url: context.url || `https://youtube.com/${context.handle}`,
       avatar_url: '',
       region: context.region,
       categories: [context.category],

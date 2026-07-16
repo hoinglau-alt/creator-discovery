@@ -44,6 +44,7 @@ export interface Creator {
   avatar: string;
   platform: Platform;
   platformHandle: string;
+  platformUrl?: string;
   region: Region;
   categories: Category[];
   followers: number;

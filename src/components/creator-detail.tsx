@@ -60,7 +60,18 @@ export default function CreatorDetail({ creator, onClose, onStatusChange, onGene
                   </span>
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-sm text-slate-500">@{creator.platformHandle}</span>
+                  {creator.platformUrl ? (
+                    <a
+                      href={creator.platformUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-slate-500 hover:text-[#00a1d6] transition-colors"
+                    >
+                      @{creator.platformHandle}
+                    </a>
+                  ) : (
+                    <span className="text-sm text-slate-500">@{creator.platformHandle}</span>
+                  )}
                   <span className="text-slate-300">|</span>
                   <span className="text-sm text-slate-500">{region.flag} {region.label}</span>
                 </div>

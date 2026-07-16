@@ -73,7 +73,18 @@ export default function CreatorCard({ creator, onClick, index, onGenerateOutreac
             </span>
           </div>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs text-slate-400">@{creator.platformHandle}</span>
+            {creator.platformUrl ? (
+              <a
+                href={creator.platformUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-slate-400 hover:text-[#00a1d6] transition-colors"
+              >
+                @{creator.platformHandle}
+              </a>
+            ) : (
+              <span className="text-xs text-slate-400">@{creator.platformHandle}</span>
+            )}
             <span className="text-xs text-slate-300">|</span>
             <span className="text-xs text-slate-500">{region.flag} {region.label}</span>
           </div>
