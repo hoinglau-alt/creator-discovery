@@ -18,6 +18,7 @@ interface ScrapeTask {
   scraped: number;
   target: number;
   error?: string;
+  creators?: Array<{ name: string; platform_handle: string; followers: number }>;
 }
 
 export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
@@ -105,7 +106,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
 
         if (result.success) {
           setTasks(prev => prev.map((t, idx) =>
-            idx === i ? { ...t, status: 'completed', scraped: result.data.scraped } : t
+            idx === i ? { ...t, status: 'completed', scraped: result.data.scraped, creators: result.data.creators || [] } : t
           ));
           setTotalScraped(prev => prev + result.data.scraped);
         } else {
@@ -306,6 +307,16 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
                   </div>
                   {task.error && (
                     <p className="text-xs text-red-500 mt-0.5">{task.error}</p>
+                  )}
+                  {task.status === 'completed' && task.creators && task.creators.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {task.creators.map((c, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-xs text-slate-600">
+                          <span className="font-medium">{c.name}</span>
+                          <span className="text-slate-400">@{c.platform_handle}</span>
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
                 <div className="text-sm text-slate-500">

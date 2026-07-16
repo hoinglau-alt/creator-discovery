@@ -531,13 +531,8 @@ ${context.pageText.slice(0, 2000)}
   }
 }
 
-async function storeCreator(supabase: any, creator: ScrapedCreator): Promise<void> {
+async function storeCreator(supabase: any, creator: ScrapedCreator): Promise<boolean> {
   try {
-    // 只入库有联系方式的创作者
-    if (!creator.contact_info || creator.contact_info.length === 0) {
-      return;
-    }
-
     const { data, error } = await supabase
       .from('creators')
       .upsert(
@@ -554,7 +549,7 @@ async function storeCreator(supabase: any, creator: ScrapedCreator): Promise<voi
           content_type: creator.content_type,
           languages: creator.languages,
           bio: creator.bio,
-          contact_info: creator.contact_info,
+          contact_info: creator.contact_info || [],
           source_url: creator.source_url,
         },
         { onConflict: 'platform_handle' }
@@ -562,9 +557,12 @@ async function storeCreator(supabase: any, creator: ScrapedCreator): Promise<voi
 
     if (error) {
       console.error(`存储创作者失败 ${creator.name}:`, error.message);
+      return false;
     }
+    return true;
   } catch (error) {
     console.error(`存储创作者异常 ${creator.name}:`, error);
+    return false;
   }
 }
 
@@ -788,10 +786,11 @@ export async function scrapeCreators(
       const contactInfo = extractContactInfoFromText(textContent, creator.platform);
       if (contactInfo.length > 0) {
         creator.contact_info = contactInfo;
-        await storeCreator(supabase, creator);
         withContact++;
         console.log(`提取到联系方式: ${creator.name} - ${contactInfo.length}个`);
       }
+      // Store creator regardless of contact info
+      await storeCreator(supabase, creator);
     } catch (error) {
       // Silently continue
     }
@@ -810,6 +809,6 @@ export async function scrapeCreators(
 
   return {
     scraped: allCreators.length,
-    creators: allCreators.filter(c => c.contact_info && c.contact_info.length > 0),
+    creators: allCreators,
   };
 }
