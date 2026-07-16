@@ -1,9 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LLMClient, Config, HeaderUtils, type Message } from 'coze-coding-dev-sdk';
+import { mockCreators } from '@/lib/mock-data';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { creatorName, platform, region, categories, followers, contentStyle, audienceProfile, messageType } = body;
+  let { creatorId, creatorName, platform, region, categories, followers, contentStyle, audienceProfile, messageType } = body;
+
+  // If creatorId is provided, look up from mock data
+  if (creatorId && !creatorName) {
+    const creator = mockCreators.find((c) => c.id === creatorId);
+    if (!creator) {
+      return NextResponse.json({ error: 'Creator not found' }, { status: 404 });
+    }
+    creatorName = creator.name;
+    platform = creator.platform;
+    region = creator.region;
+    categories = creator.categories;
+    followers = creator.followers;
+    contentStyle = creator.evaluation.contentStyleTags;
+    audienceProfile = creator.evaluation.audienceProfile;
+    messageType = messageType || body.format || 'email';
+  }
+
+  if (!creatorName || !categories) {
+    return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+  }
 
   const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
   const config = new Config();

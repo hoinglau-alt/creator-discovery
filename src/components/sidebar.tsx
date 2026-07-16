@@ -20,9 +20,9 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { id: 'discovery', label: '智能发现', icon: Compass, desc: '筛选与搜索' },
+  { id: 'discovery', label: '发现与映射', icon: Compass, desc: '搜索·筛选·Mapping' },
   { id: 'evaluation', label: 'AI评估', icon: BarChart3, desc: '评分与分析' },
-  { id: 'outreach', label: 'AI外联', icon: Mail, desc: '话术与跟踪' },
+  { id: 'outreach', label: 'AI外联', icon: Mail, desc: '批量话术与跟踪' },
   { id: 'management', label: '数据管理', icon: Database, desc: '表格与导出' },
 ];
 

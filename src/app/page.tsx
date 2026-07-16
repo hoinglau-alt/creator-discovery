@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Sidebar from '@/components/sidebar';
 import Header from '@/components/header';
 import FilterPanel from '@/components/filter-panel';
@@ -8,18 +8,22 @@ import CreatorCard from '@/components/creator-card';
 import CreatorDetail from '@/components/creator-detail';
 import OutreachGenerator from '@/components/outreach-generator';
 import DataTable from '@/components/data-table';
+import MappingView from '@/components/mapping-view';
+import BatchOutreach from '@/components/batch-outreach';
 import { mockCreators } from '@/lib/mock-data';
-import type { Creator, FilterState, OutreachStatus } from '@/lib/types';
+import type { Creator, FilterState, OutreachStatus, Platform, Category } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { LayoutGrid, Table, BarChart3, TrendingUp, Users, Target, Mail } from 'lucide-react';
+import { LayoutGrid, Table, BarChart3, TrendingUp, Users, Target, Mail, Map, Sparkles, Search, ArrowRight, CheckSquare, Square, Check } from 'lucide-react';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('discovery');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
   const [outreachCreator, setOutreachCreator] = useState<Creator | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'table' | 'mapping'>('mapping');
   const [creators, setCreators] = useState<Creator[]>(mockCreators);
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedForBatch, setSelectedForBatch] = useState<Set<string>>(new Set());
 
   const [filters, setFilters] = useState<FilterState>({
     platforms: [],
@@ -40,7 +44,11 @@ export default function Home() {
       if (filters.contentType !== 'all' && c.contentType !== filters.contentType && c.contentType !== 'both') return false;
       if (filters.searchQuery) {
         const q = filters.searchQuery.toLowerCase();
-        return c.name.toLowerCase().includes(q) || c.platformHandle.toLowerCase().includes(q);
+        return (
+          c.name.toLowerCase().includes(q) ||
+          c.platformHandle.toLowerCase().includes(q) ||
+          c.evaluation.contentStyleTags.some((t) => t.toLowerCase().includes(q))
+        );
       }
       return true;
     });
@@ -61,6 +69,53 @@ export default function Home() {
     setOutreachCreator(creator);
   };
 
+  // Batch selection
+  const toggleBatchSelect = useCallback((id: string) => {
+    setSelectedForBatch((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectAllFiltered = useCallback(() => {
+    setSelectedForBatch((prev) => {
+      const next = new Set(prev);
+      for (const c of filteredCreators) {
+        next.add(c.id);
+      }
+      return next;
+    });
+  }, [filteredCreators]);
+
+  const clearBatchSelection = useCallback(() => {
+    setSelectedForBatch(new Set());
+  }, []);
+
+  const removeBatchCreator = useCallback((id: string) => {
+    setSelectedForBatch((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const selectedBatchCreators = useMemo(() => {
+    return creators.filter((c) => selectedForBatch.has(c.id));
+  }, [creators, selectedForBatch]);
+
+  // Mapping cell click
+  const handleMappingCellClick = useCallback((platform: Platform, category: Category) => {
+    setFilters((prev) => ({
+      ...prev,
+      platforms: [platform],
+      categories: [category],
+    }));
+    setViewMode('grid');
+    setShowFilters(true);
+  }, []);
+
   // Stats
   const stats = useMemo(() => ({
     total: creators.length,
@@ -70,11 +125,13 @@ export default function Home() {
   }), [creators]);
 
   const tabConfig: Record<string, { title: string; subtitle: string }> = {
-    discovery: { title: '智能发现', subtitle: '筛选并发现优质港澳台创作者' },
+    discovery: { title: '创作者发现', subtitle: '搜索、筛选、映射港澳台优质创作者' },
     evaluation: { title: 'AI评估分析', subtitle: '查看创作者详细评估与数据' },
-    outreach: { title: 'AI外联助手', subtitle: '生成个性化邀约并跟踪状态' },
+    outreach: { title: 'AI外联助手', subtitle: '批量生成个性化邀约并跟踪状态' },
     management: { title: '数据管理', subtitle: '管理创作者数据库与导出' },
   };
+
+  const hasActiveFilters = filters.platforms.length > 0 || filters.categories.length > 0 || filters.regions.length > 0 || filters.followerTiers.length > 0 || filters.contentType !== 'all';
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
@@ -117,46 +174,142 @@ export default function Home() {
             })}
           </div>
 
-          {/* Discovery Tab */}
+          {/* ==================== DISCOVERY TAB ==================== */}
           {activeTab === 'discovery' && (
             <div className="space-y-4">
-              <FilterPanel filters={filters} onFilterChange={setFilters} resultCount={filteredCreators.length} />
-
-              {/* View toggle */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-slate-400" />
-                  <span className="text-xs text-slate-500">
-                    共发现 <span className="font-bold text-slate-700">{filteredCreators.length}</span> 位创作者
-                  </span>
+              {/* Search-first Hero */}
+              {!hasActiveFilters && !filters.searchQuery && viewMode === 'mapping' && (
+                <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center mb-6">
+                  <div className="w-16 h-16 bg-[#00a1d6]/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <Search className="w-8 h-8 text-[#00a1d6]" />
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 mb-2">发现港澳台优质创作者</h2>
+                  <p className="text-sm text-slate-500 mb-6 max-w-md mx-auto">
+                    在下方搜索框输入关键词，或通过 Mapping 视图浏览平台×品类矩阵，快速定位目标创作者
+                  </p>
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => setShowFilters(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm"
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                      高级筛选
+                    </button>
+                    <button
+                      onClick={selectAllFiltered}
+                      className="flex items-center gap-2 px-4 py-2 bg-[#00a1d6] text-white rounded-lg hover:bg-[#0090be] transition-colors text-sm"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      批量选择
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 p-1">
+              )}
+
+              {/* Filter Panel (collapsible) */}
+              <div className={cn('transition-all', showFilters || hasActiveFilters ? 'block' : 'hidden')}>
+                <FilterPanel filters={filters} onFilterChange={setFilters} resultCount={filteredCreators.length} />
+              </div>
+
+              {/* View toggle + batch bar */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-slate-400" />
+                    <span className="text-xs text-slate-500">
+                      共 <span className="font-bold text-slate-700">{filteredCreators.length}</span> 位创作者
+                    </span>
+                  </div>
+                  {selectedForBatch.size > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1 bg-[#00a1d6]/10 rounded-lg">
+                      <CheckSquare className="w-3.5 h-3.5 text-[#00a1d6]" />
+                      <span className="text-xs font-medium text-[#00a1d6]">已选 {selectedForBatch.size} 位</span>
+                      <button
+                        onClick={() => setActiveTab('outreach')}
+                        className="text-xs px-2 py-0.5 bg-[#00a1d6] text-white rounded-md hover:bg-[#0090be] transition-colors"
+                      >
+                        去批量外联
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {/* Batch select all */}
                   <button
-                    onClick={() => setViewMode('grid')}
-                    className={cn('p-1.5 rounded-md transition-all', viewMode === 'grid' ? 'bg-[#00a1d6] text-white' : 'text-slate-400 hover:text-slate-600')}
+                    onClick={selectedForBatch.size === filteredCreators.length ? clearBatchSelection : selectAllFiltered}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-700 bg-white border border-slate-200 rounded-lg transition-colors"
                   >
-                    <LayoutGrid className="w-4 h-4" />
+                    {selectedForBatch.size === filteredCreators.length ? <CheckSquare className="w-3.5 h-3.5 text-[#00a1d6]" /> : <Square className="w-3.5 h-3.5" />}
+                    全选
                   </button>
-                  <button
-                    onClick={() => setViewMode('table')}
-                    className={cn('p-1.5 rounded-md transition-all', viewMode === 'table' ? 'bg-[#00a1d6] text-white' : 'text-slate-400 hover:text-slate-600')}
-                  >
-                    <Table className="w-4 h-4" />
-                  </button>
+                  {/* View mode toggle */}
+                  <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 p-1">
+                    <button
+                      onClick={() => setViewMode('mapping')}
+                      className={cn('p-1.5 rounded-md transition-all', viewMode === 'mapping' ? 'bg-[#00a1d6] text-white' : 'text-slate-400 hover:text-slate-600')}
+                      title="Mapping视图"
+                    >
+                      <Map className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setViewMode('grid')}
+                      className={cn('p-1.5 rounded-md transition-all', viewMode === 'grid' ? 'bg-[#00a1d6] text-white' : 'text-slate-400 hover:text-slate-600')}
+                      title="卡片视图"
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setViewMode('table')}
+                      className={cn('p-1.5 rounded-md transition-all', viewMode === 'table' ? 'bg-[#00a1d6] text-white' : 'text-slate-400 hover:text-slate-600')}
+                      title="表格视图"
+                    >
+                      <Table className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Content */}
-              {viewMode === 'grid' ? (
+              {/* Mapping View */}
+              {viewMode === 'mapping' && (
+                <MappingView
+                  creators={filteredCreators}
+                  onCreatorClick={setSelectedCreator}
+                  onCellClick={handleMappingCellClick}
+                />
+              )}
+
+              {/* Grid View */}
+              {viewMode === 'grid' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {filteredCreators.map((creator, i) => (
-                    <CreatorCard key={creator.id} creator={creator} onClick={setSelectedCreator} index={i} />
+                    <div key={creator.id} className="relative">
+                      {/* Batch checkbox */}
+                      <div className="absolute top-3 left-3 z-10">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleBatchSelect(creator.id); }}
+                          className={cn(
+                            'w-5 h-5 rounded border-2 flex items-center justify-center transition-all',
+                            selectedForBatch.has(creator.id)
+                              ? 'bg-[#00a1d6] border-[#00a1d6]'
+                              : 'bg-white/80 border-slate-300 hover:border-[#00a1d6] backdrop-blur-sm'
+                          )}
+                        >
+                          {selectedForBatch.has(creator.id) && <Check className="w-3 h-3 text-white" />}
+                        </button>
+                      </div>
+                      <CreatorCard creator={creator} onClick={setSelectedCreator} index={i} />
+                    </div>
                   ))}
                 </div>
-              ) : (
+              )}
+
+              {/* Table View */}
+              {viewMode === 'table' && (
                 <DataTable creators={filteredCreators} onCreatorClick={setSelectedCreator} />
               )}
 
+              {/* Empty state */}
               {filteredCreators.length === 0 && (
                 <div className="text-center py-16">
                   <Users className="w-12 h-12 text-slate-300 mx-auto" />
@@ -167,7 +320,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Evaluation Tab */}
+          {/* ==================== EVALUATION TAB ==================== */}
           {activeTab === 'evaluation' && (
             <div className="space-y-4">
               <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -217,7 +370,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Outreach Tab */}
+          {/* ==================== OUTREACH TAB ==================== */}
           {activeTab === 'outreach' && (
             <div className="space-y-4">
               {/* Status pipeline */}
@@ -246,21 +399,50 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Creators needing outreach */}
+              {/* Batch Outreach Section */}
+              {selectedForBatch.size > 0 && (
+                <BatchOutreach
+                  selectedCreators={selectedBatchCreators}
+                  onClearSelection={clearBatchSelection}
+                  onRemoveCreator={removeBatchCreator}
+                  onStatusChange={handleStatusChange}
+                />
+              )}
+
+              {/* Individual outreach list */}
               <div>
-                <h3 className="text-sm font-semibold text-slate-900 mb-3">待处理创作者</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    {selectedForBatch.size > 0 ? '或选择单个创作者生成话术' : '选择创作者生成个性化邀约'}
+                  </h3>
+                  {selectedForBatch.size === 0 && (
+                    <p className="text-xs text-slate-400">从「创作者发现」页面批量选择后，可在此批量生成</p>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {filteredCreators.filter((c) => c.outreachStatus === 'pending' || c.outreachStatus === 'contacted').map((creator, i) => (
-                    <CreatorCard key={creator.id} creator={creator} onClick={setSelectedCreator} index={i} />
-                  ))}
+                  {filteredCreators
+                    .filter((c) => c.outreachStatus === 'pending' || c.outreachStatus === 'contacted')
+                    .map((creator, i) => (
+                      <div key={creator.id} className="relative">
+                        <CreatorCard
+                          creator={creator}
+                          onClick={setSelectedCreator}
+                          index={i}
+                          onGenerateOutreach={handleGenerateOutreach}
+                        />
+                      </div>
+                    ))}
                 </div>
               </div>
             </div>
           )}
 
-          {/* Management Tab */}
+          {/* ==================== MANAGEMENT TAB ==================== */}
           {activeTab === 'management' && (
-            <DataTable creators={filteredCreators} onCreatorClick={setSelectedCreator} />
+            <div className="space-y-4">
+              <FilterPanel filters={filters} onFilterChange={setFilters} resultCount={filteredCreators.length} />
+              <DataTable creators={filteredCreators} onCreatorClick={setSelectedCreator} />
+            </div>
           )}
         </main>
       </div>
@@ -275,7 +457,7 @@ export default function Home() {
         />
       )}
 
-      {/* Outreach Generator */}
+      {/* Outreach Generator Modal */}
       {outreachCreator && (
         <OutreachGenerator
           creator={outreachCreator}

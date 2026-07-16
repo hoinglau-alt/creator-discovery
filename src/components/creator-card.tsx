@@ -9,6 +9,7 @@ interface CreatorCardProps {
   creator: Creator;
   onClick: (creator: Creator) => void;
   index: number;
+  onGenerateOutreach?: (creator: Creator) => void;
 }
 
 function formatFollowers(n: number): string {
@@ -35,7 +36,7 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export default function CreatorCard({ creator, onClick, index }: CreatorCardProps) {
+export default function CreatorCard({ creator, onClick, index, onGenerateOutreach }: CreatorCardProps) {
   const platform = getPlatformInfo(creator.platform);
   const region = getRegionInfo(creator.region);
   const status = getStatusInfo(creator.outreachStatus);
