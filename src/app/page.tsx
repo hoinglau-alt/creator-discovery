@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import Sidebar from '@/components/sidebar';
 import Header from '@/components/header';
 import FilterPanel from '@/components/filter-panel';
@@ -10,18 +10,21 @@ import OutreachGenerator from '@/components/outreach-generator';
 import DataTable from '@/components/data-table';
 import MappingView from '@/components/mapping-view';
 import BatchOutreach from '@/components/batch-outreach';
+import { ScrapePanel } from '@/components/scrape-panel';
 import { mockCreators } from '@/lib/mock-data';
 import type { Creator, FilterState, OutreachStatus, Platform, Category } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { LayoutGrid, Table, BarChart3, TrendingUp, Users, Target, Mail, Map, Sparkles, Search, ArrowRight, CheckSquare, Square, Check, Download, Send } from 'lucide-react';
+import { LayoutGrid, Table, BarChart3, TrendingUp, Users, Target, Mail, Map, Sparkles, Search, ArrowRight, CheckSquare, Square, Check, Download, Send, Database, Globe } from 'lucide-react';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('discovery');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
   const [outreachCreator, setOutreachCreator] = useState<Creator | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'table' | 'mapping'>('mapping');
+  const [viewMode, setViewMode] = useState<'grid' | 'table' | 'mapping' | 'scrape'>('mapping');
   const [creators, setCreators] = useState<Creator[]>(mockCreators);
+  const [dataSource, setDataSource] = useState<'mock' | 'database'>('mock');
+  const [dbCreatorCount, setDbCreatorCount] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedForBatch, setSelectedForBatch] = useState<Set<string>>(new Set());
 
@@ -69,6 +72,53 @@ export default function Home() {
     setOutreachCreator(creator);
   };
 
+  // Load creators from database
+  const loadFromDatabase = useCallback(async () => {
+    try {
+      const res = await fetch('/api/creators?source=db');
+      const result = await res.json();
+      if (result.success && result.data.length > 0) {
+        setCreators(result.data);
+        setDataSource('database');
+        setDbCreatorCount(result.data.length);
+      }
+    } catch {
+      // Fall back to mock data
+    }
+  }, []);
+
+  // Check database on mount
+  const checkDatabase = useCallback(async () => {
+    try {
+      const res = await fetch('/api/creators?source=db');
+      const result = await res.json();
+      if (result.success && result.data.length > 0) {
+        setCreators(result.data);
+        setDataSource('database');
+        setDbCreatorCount(result.data.length);
+      }
+    } catch {
+      // Use mock data
+    }
+  }, []);
+
+  // Handle scrape complete - reload from database
+  const handleScrapeComplete = useCallback(async () => {
+    await loadFromDatabase();
+  }, [loadFromDatabase]);
+
+  // Switch to database view
+  const switchToDatabase = useCallback(() => {
+    if (dataSource === 'database') return;
+    loadFromDatabase();
+  }, [dataSource, loadFromDatabase]);
+
+  // Switch back to mock data
+  const switchToMockData = useCallback(() => {
+    setCreators(mockCreators);
+    setDataSource('mock');
+  }, []);
+
   // Batch selection
   const toggleBatchSelect = useCallback((id: string) => {
     setSelectedForBatch((prev) => {
@@ -115,6 +165,11 @@ export default function Home() {
     setViewMode('grid');
     setShowFilters(true);
   }, []);
+
+  // Check database on mount
+  useEffect(() => {
+    checkDatabase();
+  }, [checkDatabase]);
 
   // Stats
   const stats = useMemo(() => ({
@@ -202,6 +257,37 @@ export default function Home() {
                 </div>
               );
             })}
+          </div>
+
+          {/* Data Source Indicator */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium',
+                dataSource === 'database'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-slate-50 text-slate-600 border border-slate-200'
+              )}>
+                <Database className="w-3 h-3" />
+                {dataSource === 'database' ? `数据库 (${dbCreatorCount} 位)` : '演示数据'}
+              </div>
+              {dataSource === 'database' && (
+                <button
+                  onClick={switchToMockData}
+                  className="text-xs text-slate-400 hover:text-slate-600"
+                >
+                  切换演示数据
+                </button>
+              )}
+              {dataSource === 'mock' && dbCreatorCount > 0 && (
+                <button
+                  onClick={switchToDatabase}
+                  className="text-xs text-[#00a1d6] hover:underline"
+                >
+                  使用数据库数据 ({dbCreatorCount} 位)
+                </button>
+              )}
+            </div>
           </div>
 
           {/* ==================== DISCOVERY TAB ==================== */}
@@ -296,6 +382,13 @@ export default function Home() {
                     >
                       <Table className="w-4 h-4" />
                     </button>
+                    <button
+                      onClick={() => setViewMode('scrape')}
+                      className={cn('p-1.5 rounded-md transition-all', viewMode === 'scrape' ? 'bg-[#00a1d6] text-white' : 'text-slate-400 hover:text-slate-600')}
+                      title="全网抓取"
+                    >
+                      <Globe className="w-4 h-4" />
+                    </button>
                   </div>
                   {/* Export button */}
                   <div className="relative group">
@@ -360,6 +453,11 @@ export default function Home() {
               {/* Table View */}
               {viewMode === 'table' && (
                 <DataTable creators={filteredCreators} onCreatorClick={setSelectedCreator} />
+              )}
+
+              {/* Scrape Panel */}
+              {viewMode === 'scrape' && (
+                <ScrapePanel onScrapeComplete={handleScrapeComplete} />
               )}
 
               {/* Empty state */}
