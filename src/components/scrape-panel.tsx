@@ -106,9 +106,9 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
 
         if (result.success) {
           setTasks(prev => prev.map((t, idx) =>
-            idx === i ? { ...t, status: 'completed', scraped: result.data.scraped, creators: result.data.creators || [] } : t
+            idx === i ? { ...t, status: 'completed', scraped: result.data.total, creators: result.data.creators || [] } : t
           ));
-          setTotalScraped(prev => prev + result.data.scraped);
+          setTotalScraped(prev => prev + result.data.total);
         } else {
           setTasks(prev => prev.map((t, idx) =>
             idx === i ? { ...t, status: 'error', error: result.error } : t
