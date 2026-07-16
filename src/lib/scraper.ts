@@ -5,32 +5,63 @@ import { getSupabaseClient } from '@/storage/database/supabase-client';
 
 const PLATFORM_SEARCH_QUERIES: Record<string, string[]> = {
   youtube: [
-    '香港 台湾 澳门 YouTuber 频道 推荐',
-    '港澳台 youtube 创作者 博主 热门',
-    'hong kong taiwan macau youtube creator channel',
+    '香港 YouTuber 排行榜 2024 2025',
+    '台湾 YouTuber 推荐 热门频道',
+    '澳门 YouTuber 博主',
+    '香港 youtube channel 订阅 最多',
+    '台湾 youtube 创作者 百万订阅',
+    'top hong kong youtubers',
+    'top taiwan youtubers',
+    'best hong kong youtube channels',
+    'popular taiwan youtube creators',
+    '香港 美食 youtuber',
+    '台湾 科技 youtuber',
+    '香港 游戏 youtuber',
+    '台湾 美妆 youtuber',
+    '香港 旅游 youtuber',
+    '台湾 音乐 youtuber',
   ],
   instagram: [
-    '香港 台湾 澳门 instagram 网红 KOL 博主',
-    '港澳台 instagram 创作者 推荐',
-    'hong kong taiwan macau instagram creator influencer',
+    '香港 instagram 网红 KOL 推荐',
+    '台湾 instagram 博主 热门',
+    '澳门 instagram 达人',
+    'hong kong instagram influencers',
+    'taiwan instagram creators',
+    '香港 美食 instagram',
+    '台湾 时尚 instagram',
+    '香港 旅游 instagram',
+    '台湾 摄影 instagram',
   ],
   tiktok: [
-    '香港 台湾 澳门 tiktok 创作者 达人 热门',
-    '港澳台 tiktok 博主 推荐',
-    'hong kong taiwan macau tiktok creator',
+    '香港 tiktok 创作者 热门',
+    '台湾 tiktok 达人 推荐',
+    '澳门 tiktok 博主',
+    'hong kong tiktok creators',
+    'taiwan tiktok influencers',
+    '香港 抖音 网红',
+    '台湾 抖音 热门',
   ],
   x: [
-    '香港 台湾 澳门 twitter 博主 KOL',
-    '港澳台 x.com 创作者 推荐',
-    'hong kong taiwan macau twitter creator',
+    '香港 twitter 博主 KOL',
+    '台湾 x.com 创作者',
+    'hong kong twitter accounts',
+    'taiwan twitter influencers',
+    '香港 财经 twitter',
+    '台湾 科技 twitter',
   ],
   douyin: [
-    '香港 台湾 澳门 抖音 创作者 达人 热门',
-    '港澳台 抖音 博主 推荐',
+    '香港 抖音 创作者 达人',
+    '台湾 抖音 博主 热门',
+    '澳门 抖音 网红',
+    '香港 抖音 美食',
+    '台湾 抖音 搞笑',
   ],
   xiaohongshu: [
-    '香港 台湾 澳门 小红书 博主 KOL 热门',
-    '港澳台 小红书 达人 推荐',
+    '香港 小红书 博主 KOL',
+    '台湾 小红书 达人 推荐',
+    '澳门 小红书 创作者',
+    '香港 小红书 美食',
+    '台湾 小红书 时尚',
   ],
 };
 
@@ -63,6 +94,40 @@ interface ScrapedCreator {
   source_url: string;
 }
 
+function extractHandleFromUrl(url: string, platform: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+
+    if (platform === 'youtube') {
+      const match = pathname.match(/\/(?:@|c\/|channel\/|user\/)([^/\s]+)/i);
+      if (match) return `@${match[1]}`;
+    } else if (platform === 'instagram') {
+      const match = pathname.match(/^\/([^/\s]+)/);
+      if (match && !['p', 'reel', 'stories', 'explore', 'accounts'].includes(match[1])) {
+        return `@${match[1]}`;
+      }
+    } else if (platform === 'tiktok') {
+      const match = pathname.match(/^\/@([^/\s]+)/);
+      if (match) return `@${match[1]}`;
+    } else if (platform === 'x') {
+      const match = pathname.match(/^\/([^/\s]+)/);
+      if (match && !['i', 'search', 'hashtag', 'explore', 'settings', 'home'].includes(match[1])) {
+        return `@${match[1]}`;
+      }
+    } else if (platform === 'douyin') {
+      const match = pathname.match(/\/user\/([^/\s]+)/);
+      if (match) return match[1];
+    } else if (platform === 'xiaohongshu') {
+      const match = pathname.match(/\/user\/profile\/([^/\s]+)/);
+      if (match) return match[1];
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 function getFollowerTier(followers: number): string {
   if (followers >= 1000000) return '100w+';
   if (followers >= 500000) return '50-100w';
@@ -71,41 +136,6 @@ function getFollowerTier(followers: number): string {
   return '<1w';
 }
 
-function extractHandleFromUrl(url: string, platform: string): string | null {
-  try {
-    const urlObj = new URL(url);
-    const path = urlObj.pathname;
-    switch (platform) {
-      case 'youtube': {
-        const match = path.match(/\/(@[\w.-]+|channel\/[\w]+|c\/[\w]+)/);
-        return match ? match[1] : null;
-      }
-      case 'instagram': {
-        const match = path.match(/^\/([\w.]+)/);
-        return match ? match[1] : null;
-      }
-      case 'tiktok': {
-        const match = path.match(/^\/(@[\w.]+)/);
-        return match ? match[1] : null;
-      }
-      case 'x': {
-        const match = path.match(/^\/([\w]+)/);
-        return match && !['home', 'explore', 'search', 'hashtag', 'i'].includes(match[1]) ? match[1] : null;
-      }
-      case 'douyin': {
-        const match = path.match(/\/user\/([\w]+)/);
-        return match ? match[1] : null;
-      }
-      case 'xiaohongshu': {
-        const match = path.match(/\/user\/profile\/([\w]+)/);
-        return match ? match[1] : null;
-      }
-      default: return null;
-    }
-  } catch { return null; }
-}
-
-// Extract creator info from search snippet directly (no page fetch needed)
 function extractFromSnippet(
   title: string,
   snippet: string,
@@ -114,66 +144,44 @@ function extractFromSnippet(
   region: string,
   category: string
 ): ScrapedCreator | null {
-  const text = `${title} ${snippet}`.toLowerCase();
-  const regionName = REGION_MAP[region] || region;
-  const categoryName = CATEGORY_MAP[category] || category;
+  try {
+    const handle = extractHandleFromUrl(url, platform);
+    if (!handle) return null;
 
-  // Check if snippet mentions the target region
-  const regionKeywords: Record<string, string[]> = {
-    hong_kong: ['香港', 'hk', 'hong kong', '港'],
-    macau: ['澳门', 'macau', 'macao', '澳'],
-    taiwan: ['台湾', 'tw', 'taiwan', '台北', '台中', '台南', '台'],
-  };
-  const keywords = regionKeywords[region] || [regionName];
-  const hasRegion = keywords.some(k => text.includes(k));
-  if (!hasRegion) return null;
+    const nameMatch = title.match(/^(.+?)[\s\-|@#]/);
+    const name = nameMatch ? nameMatch[1].trim() : handle.replace('@', '');
 
-  // Extract handle from URL
-  const handle = extractHandleFromUrl(url, platform);
-  if (!handle) return null;
+    const followerMatch = snippet.match(/(\d+(?:\.\d+)?)[\s]*(万|million|M|K|千|百万)/i);
+    let followers = 0;
+    if (followerMatch) {
+      const num = parseFloat(followerMatch[1]);
+      const unit = followerMatch[2].toLowerCase();
+      if (unit === '万' || unit === '千') followers = num * 10000;
+      else if (unit === 'million' || unit === '百万') followers = num * 1000000;
+      else if (unit === 'm') followers = num * 1000000;
+      else if (unit === 'k') followers = num * 1000;
+      else followers = num;
+    }
 
-  // Try to extract a name from title or snippet
-  let name = title
-    .replace(/youtube|instagram|tiktok|twitter|x\.com|douyin|小红书/gi, '')
-    .replace(/[-|–—]/g, ' ')
-    .trim()
-    .slice(0, 50);
-  if (!name) name = handle.replace(/^@/, '');
-
-  // Try to extract follower count from snippet
-  const followerMatch = snippet.match(/(\d+\.?\d*)\s*[万千wkm]?\s*粉丝|followers?[:\s]*(\d+\.?\d*)\s*[kmb万]?/i);
-  let followers = 0;
-  if (followerMatch) {
-    const num = parseFloat(followerMatch[1] || followerMatch[2] || '0');
-    if (snippet.includes('万') || snippet.includes('w')) followers = Math.round(num * 10000);
-    else if (snippet.toLowerCase().includes('k')) followers = Math.round(num * 1000);
-    else if (snippet.toLowerCase().includes('m')) followers = Math.round(num * 1000000);
-    else followers = Math.round(num);
+    return {
+      name,
+      platform,
+      platform_handle: handle,
+      platform_url: url,
+      avatar_url: '',
+      region,
+      categories: [category],
+      followers,
+      follower_tier: getFollowerTier(followers),
+      content_type: 'both',
+      languages: region === 'hong_kong' ? ['粤语', '英语'] : region === 'macau' ? ['粤语', '普通话'] : ['普通话', '闽南语'],
+      bio: snippet.slice(0, 200),
+      contact_info: [],
+      source_url: url,
+    };
+  } catch {
+    return null;
   }
-
-  // Extract contact info from snippet
-  const contactInfo: Array<{ type: string; value: string; reliability: string; source: string }> = [];
-  const emailMatch = snippet.match(/[\w.-]+@[\w.-]+\.\w+/);
-  if (emailMatch) {
-    contactInfo.push({ type: 'email', value: emailMatch[0], reliability: 'high', source: '搜索摘要' });
-  }
-
-  return {
-    name,
-    platform,
-    platform_handle: handle,
-    platform_url: url,
-    avatar_url: '',
-    region,
-    categories: [category],
-    followers,
-    follower_tier: getFollowerTier(followers),
-    content_type: 'both',
-    languages: region === 'hong_kong' ? ['粤语', '英语'] : region === 'macau' ? ['粤语', '普通话'] : ['普通话', '闽南语'],
-    bio: snippet.slice(0, 200),
-    contact_info: contactInfo,
-    source_url: url,
-  };
 }
 
 async function extractCreatorFromSearchResult(
@@ -185,51 +193,44 @@ async function extractCreatorFromSearchResult(
   region: string,
   category: string
 ): Promise<ScrapedCreator | null> {
-  const regionName = REGION_MAP[region] || region;
-  const categoryName = CATEGORY_MAP[category] || category;
+  try {
+    const prompt = `从以下搜索结果中提取创作者信息。如果是创作者/博主/YouTuber/网红，提取其名称和账号handle。如果不是创作者，返回null。
 
-  const prompt = `你是一个创作者数据分析专家。根据以下搜索结果信息，判断是否提到了一个具体的创作者/频道。
-
-平台: ${platform}
-目标地区: ${regionName}
-目标品类: ${categoryName}
-
-搜索结果标题: ${title}
-搜索结果摘要: ${snippet}
+标题: ${title}
+摘要: ${snippet}
 URL: ${url}
 
-如果这个搜索结果明确提到了一个具体的创作者或频道（有名称、有账号handle），请提取信息。如果只是一般性文章、列表、或没有具体创作者信息，请返回 null。
+平台: ${platform}
+地区: ${region}
+品类: ${category}
 
-要求：
-1. 创作者必须来自${regionName}地区
-2. 必须有明确的频道/账号名称
-3. 尝试从标题或摘要中提取 @handle 格式的账号
+请以JSON格式返回，格式如下（如果不是创作者返回null）:
+{
+  "name": "创作者名称",
+  "handle": "@账号",
+  "followers": 0
+}
 
-请以JSON格式返回，格式如下：
-{"name": "创作者名称", "handle": "@handle或账号名", "followers": 数字或0, "bio": "一句话简介"}
+只返回JSON，不要其他内容。`;
 
-如果没有找到具体创作者，返回: null`;
+    const response = await llmClient.invoke(
+      [{ role: 'user', content: prompt }],
+      { model: 'doubao-seed-2-0-mini-260215', temperature: 0.3 }
+    );
 
-  try {
-    const response = await llmClient.invoke([{ role: 'user', content: prompt }]);
-    const text = response.content?.trim() || '';
-
-    if (!text || text === 'null') return null;
-
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*?\}/);
+    const content = response.content || '';
+    const jsonMatch = content.match(/\{[\s\S]*?\}/);
     if (!jsonMatch) return null;
 
     const parsed = JSON.parse(jsonMatch[0]);
     if (!parsed.name || !parsed.handle) return null;
 
-    const handle = parsed.handle.startsWith('@') ? parsed.handle : `@${parsed.handle}`;
     const followers = typeof parsed.followers === 'number' ? parsed.followers : 0;
 
     return {
       name: parsed.name,
       platform,
-      platform_handle: handle,
+      platform_handle: parsed.handle.startsWith('@') ? parsed.handle : `@${parsed.handle}`,
       platform_url: url,
       avatar_url: '',
       region,
@@ -238,13 +239,157 @@ URL: ${url}
       follower_tier: getFollowerTier(followers),
       content_type: 'both',
       languages: region === 'hong_kong' ? ['粤语', '英语'] : region === 'macau' ? ['粤语', '普通话'] : ['普通话', '闽南语'],
-      bio: parsed.bio || snippet.slice(0, 200),
+      bio: snippet.slice(0, 200),
       contact_info: [],
       source_url: url,
     };
   } catch {
     return null;
   }
+}
+
+async function extractCreatorWithLLM(
+  llmClient: LLMClient,
+  context: {
+    platform: string;
+    region: string;
+    category: string;
+    url: string;
+    handle: string;
+    title: string;
+    snippet: string;
+    pageText: string;
+  }
+): Promise<ScrapedCreator | null> {
+  try {
+    const prompt = `从以下页面内容中提取创作者信息。
+
+平台: ${context.platform}
+地区: ${context.region}
+品类: ${context.category}
+URL: ${context.url}
+Handle: ${context.handle}
+标题: ${context.title}
+摘要: ${context.snippet}
+
+页面内容:
+${context.pageText.slice(0, 2000)}
+
+请以JSON格式返回创作者信息:
+{
+  "name": "创作者名称",
+  "followers": 0,
+  "bio": "简介",
+  "contact_email": "邮箱或null",
+  "contact_other": "其他联系方式或null"
+}
+
+只返回JSON，不要其他内容。`;
+
+    const response = await llmClient.invoke(
+      [{ role: 'user', content: prompt }],
+      { model: 'doubao-seed-2-0-mini-260215', temperature: 0.3 }
+    );
+
+    const content = response.content || '';
+    const jsonMatch = content.match(/\{[\s\S]*?\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const contactInfo = [];
+    if (parsed.contact_email) {
+      contactInfo.push({ type: 'email', value: parsed.contact_email, reliability: 'high', source: '页面提取' });
+    }
+    if (parsed.contact_other) {
+      contactInfo.push({ type: 'other', value: parsed.contact_other, reliability: 'medium', source: '页面提取' });
+    }
+
+    return {
+      name: parsed.name || context.handle,
+      platform: context.platform,
+      platform_handle: context.handle,
+      platform_url: context.url,
+      avatar_url: '',
+      region: context.region,
+      categories: [context.category],
+      followers: typeof parsed.followers === 'number' ? parsed.followers : 0,
+      follower_tier: getFollowerTier(typeof parsed.followers === 'number' ? parsed.followers : 0),
+      content_type: 'both',
+      languages: context.region === 'hong_kong' ? ['粤语', '英语'] : context.region === 'macau' ? ['粤语', '普通话'] : ['普通话', '闽南语'],
+      bio: parsed.bio || context.snippet.slice(0, 200),
+      contact_info: contactInfo,
+      source_url: context.url,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function storeCreator(supabase: any, creator: ScrapedCreator): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from('creators')
+      .upsert(
+        {
+          name: creator.name,
+          platform: creator.platform,
+          platform_handle: creator.platform_handle,
+          platform_url: creator.platform_url,
+          avatar_url: creator.avatar_url,
+          region: creator.region,
+          categories: creator.categories,
+          followers: creator.followers,
+          follower_tier: creator.follower_tier,
+          content_type: creator.content_type,
+          languages: creator.languages,
+          bio: creator.bio,
+          contact_info: creator.contact_info,
+          source_url: creator.source_url,
+        },
+        { onConflict: 'platform_handle' }
+      );
+
+    if (error) {
+      console.error(`存储创作者失败 ${creator.name}:`, error.message);
+    }
+  } catch (error) {
+    console.error(`存储创作者异常 ${creator.name}:`, error);
+  }
+}
+
+export async function createScrapeJob(
+  platform: string,
+  category: string,
+  region: string,
+  targetCount: number
+): Promise<string> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('scrape_jobs')
+    .insert({
+      platform,
+      category,
+      region,
+      target_count: targetCount,
+      status: 'pending',
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(`创建任务失败: ${error.message}`);
+  return data.id;
+}
+
+export async function getScrapeJobStatus(jobId: string) {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('scrape_jobs')
+    .select('*')
+    .eq('id', jobId)
+    .single();
+
+  if (error) throw new Error(`查询任务失败: ${error.message}`);
+  return data;
 }
 
 export async function scrapeCreators(
@@ -256,8 +401,6 @@ export async function scrapeCreators(
 ): Promise<{ scraped: number; creators: ScrapedCreator[] }> {
   const searchConfig = new SearchConfig();
   const searchClient = new SearchClient(searchConfig);
-  const fetchConfig = new FetchConfig();
-  const fetchClient = new FetchClient(fetchConfig);
   const llmConfig = new LLMConfig();
   const llmClient = new LLMClient(llmConfig);
   const supabase = getSupabaseClient();
@@ -291,6 +434,7 @@ export async function scrapeCreators(
     if (error) console.error('更新任务状态失败:', error.message);
   }
 
+  // Process queries in batches to find creators
   for (const queryTemplate of queries) {
     if (allCreators.length >= targetCount) break;
 
@@ -311,7 +455,10 @@ export async function scrapeCreators(
 
       console.log(`搜索 "${query}" 返回 ${searchResponse.web_items.length} 条结果`);
 
-      for (const item of searchResponse.web_items) {
+      // Process search results in parallel batches for efficiency
+      const items = searchResponse.web_items.filter(item => item.url);
+      
+      for (const item of items) {
         if (allCreators.length >= targetCount) break;
         if (!item.url) continue;
 
@@ -371,228 +518,25 @@ export async function scrapeCreators(
             }
           }
         }
-
-        // Strategy 3: Fetch page and use LLM (only if we still need more)
-        if (handle && allCreators.length < targetCount) {
-          try {
-            const fetchResponse = await fetchClient.fetch(item.url);
-            if (!fetchResponse || fetchResponse.status_code !== 0) continue;
-
-            const pageText = fetchResponse.content
-              .filter((c: { type: string }) => c.type === 'text')
-              .map((c: { text?: string }) => c.text || '')
-              .join('\n')
-              .slice(0, 3000);
-
-            if (pageText.length < 100) continue;
-
-            const creator = await extractCreatorWithLLM(llmClient, {
-              platform, region, category,
-              url: item.url, handle,
-              title: item.title || '',
-              snippet: item.snippet || '',
-              pageText,
-            });
-
-            if (creator) {
-              seenHandles.add(handle);
-              allCreators.push(creator);
-              await storeCreator(supabase, creator);
-              console.log(`LLM提取: ${creator.name} (${handle})`);
-
-              if (jobId) {
-                await supabase.from('scrape_jobs').update({
-                  scraped_count: allCreators.length,
-                }).eq('id', jobId);
-              }
-            }
-          } catch (e) {
-            console.log(`抓取失败 ${item.url}:`, (e as Error).message);
-            continue;
-          }
-        }
       }
-    } catch (e) {
-      console.log(`搜索失败 "${query}":`, (e as Error).message);
-      continue;
+    } catch (error) {
+      console.error(`搜索失败: ${query}`, error);
     }
   }
 
+  // Update job status
   if (jobId) {
     await supabase.from('scrape_jobs').update({
       status: 'completed',
-      completed_at: new Date().toISOString(),
       scraped_count: allCreators.length,
+      completed_at: new Date().toISOString(),
     }).eq('id', jobId);
   }
 
   console.log(`抓取完成: 共 ${allCreators.length} 位创作者`);
-  return { scraped: allCreators.length, creators: allCreators };
-}
 
-async function extractCreatorWithLLM(
-  llmClient: LLMClient,
-  context: {
-    platform: string;
-    region: string;
-    category: string;
-    url: string;
-    handle: string;
-    title: string;
-    snippet: string;
-    pageText: string;
-  }
-): Promise<ScrapedCreator | null> {
-  const prompt = `你是一个创作者数据分析专家。根据以下信息，提取创作者的结构化数据。
-
-平台: ${context.platform}
-目标地区: ${REGION_MAP[context.region] || context.region}
-目标品类: ${CATEGORY_MAP[context.category] || context.category}
-页面URL: ${context.url}
-页面标题: ${context.title}
-搜索摘要: ${context.snippet}
-页面内容(截取):
-${context.pageText.slice(0, 2000)}
-
-请提取以下信息并以JSON格式返回：
-{
-  "name": "创作者名称",
-  "bio": "个人简介(50字内)",
-  "followers": 粉丝数(数字，无法确定则根据内容推测量级，如10000, 50000, 100000等),
-  "content_type": "mid_long/short/both",
-  "languages": ["语言1", "语言2"],
-  "categories": ["品类1", "品类2"],
-  "contact_info": [{"type": "email/dm/website", "value": "联系方式", "reliability": "high/medium/low", "source": "来源"}],
-  "is_valid": true/false,
-  "confidence": 0-100
-}
-
-注意：
-1. is_valid: 该页面是否确实是一个${REGION_MAP[context.region] || context.region}地区创作者的主页
-2. confidence: 你对提取数据准确性的信心(0-100)
-3. 如果无法确认是港澳台创作者，is_valid设为false
-4. 联系方式从bio、about、页面文本中提取邮箱、网站等
-5. 只返回JSON，不要其他文字`;
-
-  try {
-    const response = await llmClient.invoke([
-      { role: 'user', content: prompt },
-    ], {
-      model: 'doubao-seed-2-0-mini-260215',
-      temperature: 0.3,
-    });
-
-    const content = response.content || '';
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    if (!parsed.is_valid || parsed.confidence < 30) return null;
-
-    return {
-      name: parsed.name || context.title || context.handle,
-      platform: context.platform,
-      platform_handle: context.handle,
-      platform_url: context.url,
-      avatar_url: '',
-      region: context.region,
-      categories: parsed.categories || [context.category],
-      followers: parsed.followers || 0,
-      follower_tier: getFollowerTier(parsed.followers || 0),
-      content_type: parsed.content_type || 'both',
-      languages: parsed.languages || [],
-      bio: parsed.bio || '',
-      contact_info: parsed.contact_info || [],
-      source_url: context.url,
-    };
-  } catch {
-    return null;
-  }
-}
-
-export async function createScrapeJob(
-  platform: string,
-  category: string,
-  region: string,
-  targetCount: number
-) {
-  const supabase = getSupabaseClient();
-  const regionName = REGION_MAP[region] || region;
-  const categoryName = CATEGORY_MAP[category] || category;
-  const query = `${platform} ${regionName} ${categoryName} 创作者`;
-
-  const { data, error } = await supabase
-    .from('scrape_jobs')
-    .insert({
-      platform,
-      category,
-      region,
-      query,
-      target_count: targetCount,
-      status: 'pending',
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`创建任务失败: ${error.message}`);
-  return data;
-}
-
-export async function getScrapeJobStatus(jobId: string) {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from('scrape_jobs')
-    .select('*')
-    .eq('id', jobId)
-    .single();
-
-  if (error) throw new Error(`获取任务状态失败: ${error.message}`);
-  return data;
-}
-
-async function storeCreator(
-  supabase: ReturnType<typeof getSupabaseClient>,
-  creator: ScrapedCreator
-) {
-  const { data: existing } = await supabase
-    .from('creators')
-    .select('id')
-    .eq('platform_handle', creator.platform_handle)
-    .eq('platform', creator.platform)
-    .maybeSingle();
-
-  if (existing) {
-    const { error } = await supabase
-      .from('creators')
-      .update({
-        name: creator.name,
-        followers: creator.followers,
-        follower_tier: creator.follower_tier,
-        bio: creator.bio,
-        contact_info: creator.contact_info as unknown as string,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', existing.id);
-    if (error) console.error('更新创作者失败:', error.message);
-  } else {
-    const { error } = await supabase
-      .from('creators')
-      .insert({
-        name: creator.name,
-        platform: creator.platform,
-        platform_handle: creator.platform_handle,
-        platform_url: creator.platform_url,
-        avatar_url: creator.avatar_url,
-        region: creator.region,
-        categories: creator.categories,
-        followers: creator.followers,
-        follower_tier: creator.follower_tier,
-        content_type: creator.content_type,
-        languages: creator.languages,
-        bio: creator.bio,
-        contact_info: creator.contact_info,
-        source_url: creator.source_url,
-      });
-    if (error) console.error('插入创作者失败:', error.message);
-  }
+  return {
+    scraped: allCreators.length,
+    creators: allCreators,
+  };
 }
