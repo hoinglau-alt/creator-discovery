@@ -13,7 +13,7 @@ import BatchOutreach from '@/components/batch-outreach';
 import { mockCreators } from '@/lib/mock-data';
 import type { Creator, FilterState, OutreachStatus, Platform, Category } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { LayoutGrid, Table, BarChart3, TrendingUp, Users, Target, Mail, Map, Sparkles, Search, ArrowRight, CheckSquare, Square, Check } from 'lucide-react';
+import { LayoutGrid, Table, BarChart3, TrendingUp, Users, Target, Mail, Map, Sparkles, Search, ArrowRight, CheckSquare, Square, Check, Download, Send } from 'lucide-react';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('discovery');
@@ -132,6 +132,36 @@ export default function Home() {
   };
 
   const hasActiveFilters = filters.platforms.length > 0 || filters.categories.length > 0 || filters.regions.length > 0 || filters.followerTiers.length > 0 || filters.contentType !== 'all';
+
+  // Export function
+  const handleExport = async (format: 'csv' | 'excel') => {
+    const dataToExport = selectedForBatch.size > 0
+      ? creators.filter((c) => selectedForBatch.has(c.id))
+      : filteredCreators;
+
+    try {
+      const response = await fetch('/api/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creators: dataToExport, format }),
+      });
+
+      if (!response.ok) throw new Error('Export failed');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `creators_export_${new Date().toISOString().slice(0, 10)}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('导出失败，请重试');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
@@ -266,6 +296,29 @@ export default function Home() {
                     >
                       <Table className="w-4 h-4" />
                     </button>
+                  </div>
+                  {/* Export button */}
+                  <div className="relative group">
+                    <button
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      导出
+                    </button>
+                    <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 min-w-[120px]">
+                      <button
+                        onClick={() => handleExport('csv')}
+                        className="w-full text-left px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 first:rounded-t-lg"
+                      >
+                        导出 CSV
+                      </button>
+                      <button
+                        onClick={() => handleExport('excel')}
+                        className="w-full text-left px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 last:rounded-b-lg"
+                      >
+                        导出 Excel
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
