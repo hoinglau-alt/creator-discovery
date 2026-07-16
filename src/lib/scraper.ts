@@ -128,12 +128,120 @@ function extractHandleFromUrl(url: string, platform: string): string | null {
   return null;
 }
 
+function extractContactInfo(pageText: string): Array<{ type: string; value: string; reliability: string; source: string }> {
+  const contacts: Array<{ type: string; value: string; reliability: string; source: string }> = [];
+
+  // Extract email addresses
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+  const emails = pageText.match(emailRegex) || [];
+  for (const email of emails) {
+    if (!email.includes('example.com') && !email.includes('test.com')) {
+      contacts.push({
+        type: 'email',
+        value: email,
+        reliability: email.toLowerCase().includes('business') || email.toLowerCase().includes('contact') ? 'high' : 'medium',
+        source: 'Profile Page',
+      });
+    }
+  }
+
+  // Extract social media links
+  const socialPatterns = [
+    { type: 'instagram', regex: /instagram\.com\/([a-zA-Z0-9._]+)/, prefix: '@' },
+    { type: 'twitter', regex: /twitter\.com\/([a-zA-Z0-9_]+)|x\.com\/([a-zA-Z0-9_]+)/, prefix: '@' },
+    { type: 'tiktok', regex: /tiktok\.com\/@([a-zA-Z0-9._]+)/, prefix: '@' },
+    { type: 'youtube', regex: /youtube\.com\/(@[a-zA-Z0-9._]+|c\/[a-zA-Z0-9._]+|channel\/[a-zA-Z0-9_-]+)/, prefix: '' },
+    { type: 'weibo', regex: /weibo\.com\/([a-zA-Z0-9]+)/, prefix: '@' },
+    { type: 'xiaohongshu', regex: /xiaohongshu\.com\/user\/profile\/([a-zA-Z0-9]+)/, prefix: '' },
+  ];
+
+  for (const social of socialPatterns) {
+    const match = pageText.match(social.regex);
+    if (match) {
+      const handle = match[1] || match[2];
+      if (handle) {
+        contacts.push({
+          type: social.type,
+          value: social.prefix + handle,
+          reliability: 'medium',
+          source: 'Profile Page',
+        });
+      }
+    }
+  }
+
+  // Extract website URLs
+  const websiteRegex = /https?:\/\/(?!.*(?:youtube|instagram|twitter|x|tiktok|weibo|xiaohongshu)\.com)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?/g;
+  const websites = pageText.match(websiteRegex) || [];
+  for (const website of websites.slice(0, 2)) {
+    contacts.push({
+      type: 'website',
+      value: website,
+      reliability: 'medium',
+      source: 'Profile Page',
+    });
+  }
+
+  return contacts.slice(0, 5); // Limit to 5 contacts
+}
+
 function getFollowerTier(followers: number): string {
   if (followers >= 1000000) return '100w+';
   if (followers >= 500000) return '50-100w';
   if (followers >= 100000) return '10-50w';
   if (followers >= 10000) return '1-10w';
   return '<1w';
+}
+
+function extractContactInfoFromText(
+  text: string,
+  platform: string
+): { type: string; value: string; reliability: string; source: string }[] {
+  const contacts: { type: string; value: string; reliability: string; source: string }[] = [];
+  const seen = new Set<string>();
+
+  // Email patterns
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+  let match;
+  while ((match = emailRegex.exec(text)) !== null) {
+    const email = match[0].toLowerCase();
+    if (!seen.has(email) && !email.includes('example') && !email.includes('test')) {
+      seen.add(email);
+      contacts.push({ type: 'email', value: email, reliability: 'high', source: '主页内容' });
+    }
+  }
+
+  // WeChat ID patterns (微信号: xxx or 微信：xxx)
+  const wechatRegex = /(?:微信|wechat|weixin)[：:\s]*([a-zA-Z0-9_-]{5,})/gi;
+  while ((match = wechatRegex.exec(text)) !== null) {
+    const wechat = match[1];
+    if (!seen.has(wechat)) {
+      seen.add(wechat);
+      contacts.push({ type: 'wechat', value: wechat, reliability: 'medium', source: '主页内容' });
+    }
+  }
+
+  // Weibo patterns
+  const weiboRegex = /(?:weibo\.com|微博)[\/@]([a-zA-Z0-9_-]+)/gi;
+  while ((match = weiboRegex.exec(text)) !== null) {
+    const weibo = match[1];
+    if (!seen.has(weibo)) {
+      seen.add(weibo);
+      contacts.push({ type: 'weibo', value: weibo, reliability: 'medium', source: '主页内容' });
+    }
+  }
+
+  // LinkedIn patterns
+  const linkedinRegex = /linkedin\.com\/in\/([a-zA-Z0-9_-]+)/gi;
+  while ((match = linkedinRegex.exec(text)) !== null) {
+    const linkedin = match[1];
+    if (!seen.has(linkedin)) {
+      seen.add(linkedin);
+      contacts.push({ type: 'linkedin', value: linkedin, reliability: 'high', source: '主页内容' });
+    }
+  }
+
+  return contacts;
 }
 
 function extractFromSnippet(
@@ -351,6 +459,11 @@ ${context.pageText.slice(0, 2000)}
 
 async function storeCreator(supabase: any, creator: ScrapedCreator): Promise<void> {
   try {
+    // 只入库有联系方式的创作者
+    if (!creator.contact_info || creator.contact_info.length === 0) {
+      return;
+    }
+
     const { data, error } = await supabase
       .from('creators')
       .upsert(
@@ -425,6 +538,8 @@ export async function scrapeCreators(
 ): Promise<{ scraped: number; creators: ScrapedCreator[] }> {
   const searchConfig = new SearchConfig();
   const searchClient = new SearchClient(searchConfig);
+  const fetchConfig = new FetchConfig();
+  const fetchClient = new FetchClient(fetchConfig);
   const llmConfig = new LLMConfig();
   const llmClient = new LLMClient(llmConfig);
   const supabase = getSupabaseClient();
@@ -546,6 +661,46 @@ export async function scrapeCreators(
     }
   }
 
+  // Phase 3: Fetch profile pages to extract contact info
+  console.log(`开始批量获取联系方式...`);
+  let withContact = 0;
+  for (const creator of allCreators) {
+    if (creator.contact_info && creator.contact_info.length > 0) {
+      withContact++;
+      continue;
+    }
+
+    try {
+      const profileUrl = creator.platform_url || creator.source_url;
+      if (!profileUrl) continue;
+
+      const fetchResponse = await fetchClient.fetch(profileUrl);
+
+      if (fetchResponse.status_code !== 0) continue;
+
+      const textContent = fetchResponse.content
+        .filter(item => item.type === 'text')
+        .map(item => item.text)
+        .join('\n')
+        .slice(0, 3000);
+
+      if (textContent.length < 100) continue;
+
+      // Extract contact info from page content using regex
+      const contactInfo = extractContactInfoFromText(textContent, creator.platform);
+      if (contactInfo.length > 0) {
+        creator.contact_info = contactInfo;
+        await storeCreator(supabase, creator);
+        withContact++;
+        console.log(`提取到联系方式: ${creator.name} - ${contactInfo.length}个`);
+      }
+    } catch (error) {
+      // Silently continue
+    }
+  }
+
+  console.log(`抓取完成: 共 ${allCreators.length} 位创作者，${withContact} 位有联系方式`);
+
   // Update job status
   if (jobId) {
     await supabase.from('scrape_jobs').update({
@@ -555,10 +710,8 @@ export async function scrapeCreators(
     }).eq('id', jobId);
   }
 
-  console.log(`抓取完成: 共 ${allCreators.length} 位创作者`);
-
   return {
     scraped: allCreators.length,
-    creators: allCreators,
+    creators: allCreators.filter(c => c.contact_info && c.contact_info.length > 0),
   };
 }
