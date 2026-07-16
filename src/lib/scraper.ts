@@ -184,67 +184,91 @@ function extractFromSnippet(
   }
 }
 
-async function extractCreatorFromSearchResult(
+async function extractCreatorsBatch(
   llmClient: LLMClient,
-  title: string,
-  snippet: string,
-  url: string,
+  items: Array<{ title: string; snippet: string; url: string }>,
   platform: string,
   region: string,
   category: string
-): Promise<ScrapedCreator | null> {
-  try {
-    const prompt = `从以下搜索结果中提取创作者信息。如果是创作者/博主/YouTuber/网红，提取其名称和账号handle。如果不是创作者，返回null。
+): Promise<ScrapedCreator[]> {
+  if (items.length === 0) return [];
 
-标题: ${title}
-摘要: ${snippet}
-URL: ${url}
+  const regionName = REGION_MAP[region] || region;
+  const categoryName = CATEGORY_MAP[category] || category;
+
+  // Build batch input
+  const itemsText = items.map((item, idx) => {
+    return `[${idx + 1}]
+标题: ${item.title || ''}
+摘要: ${item.snippet || ''}
+URL: ${item.url || ''}`;
+  }).join('\n\n');
+
+  const prompt = `从以下${items.length}条搜索结果中提取所有创作者/博主/YouTuber/网红信息。
 
 平台: ${platform}
-地区: ${region}
-品类: ${category}
+目标地区: ${regionName}
+目标品类: ${categoryName}
 
-请以JSON格式返回，格式如下（如果不是创作者返回null）:
-{
-  "name": "创作者名称",
-  "handle": "@账号",
-  "followers": 0
-}
+搜索结果:
+${itemsText}
 
-只返回JSON，不要其他内容。`;
+请以JSON数组格式返回所有找到的创作者，格式如下:
+[
+  {
+    "name": "创作者名称",
+    "handle": "@账号handle",
+    "followers": 0,
+    "bio": "简介（可选）"
+  }
+]
 
+规则:
+1. 只提取真正的创作者/博主/YouTuber/网红，排除普通文章、新闻、商品链接
+2. 如果某条结果不是创作者，跳过它
+3. handle 必须以 @ 开头
+4. followers 填估计值，如果无法判断填 0
+5. 如果没有找到任何创作者，返回空数组 []
+
+只返回JSON数组，不要其他内容。`;
+
+  try {
     const response = await llmClient.invoke(
       [{ role: 'user', content: prompt }],
       { model: 'doubao-seed-2-0-mini-260215', temperature: 0.3 }
     );
 
     const content = response.content || '';
-    const jsonMatch = content.match(/\{[\s\S]*?\}/);
-    if (!jsonMatch) return null;
+    const jsonMatch = content.match(/\[[\s\S]*?\]/);
+    if (!jsonMatch) return [];
 
     const parsed = JSON.parse(jsonMatch[0]);
-    if (!parsed.name || !parsed.handle) return null;
+    if (!Array.isArray(parsed)) return [];
 
-    const followers = typeof parsed.followers === 'number' ? parsed.followers : 0;
-
-    return {
-      name: parsed.name,
-      platform,
-      platform_handle: parsed.handle.startsWith('@') ? parsed.handle : `@${parsed.handle}`,
-      platform_url: url,
-      avatar_url: '',
-      region,
-      categories: [category],
-      followers,
-      follower_tier: getFollowerTier(followers),
-      content_type: 'both',
-      languages: region === 'hong_kong' ? ['粤语', '英语'] : region === 'macau' ? ['粤语', '普通话'] : ['普通话', '闽南语'],
-      bio: snippet.slice(0, 200),
-      contact_info: [],
-      source_url: url,
-    };
-  } catch {
-    return null;
+    return parsed
+      .filter((item: any) => item.name && item.handle)
+      .map((item: any) => {
+        const followers = typeof item.followers === 'number' ? item.followers : 0;
+        return {
+          name: item.name,
+          platform,
+          platform_handle: item.handle.startsWith('@') ? item.handle : `@${item.handle}`,
+          platform_url: items.find(i => i.title?.includes(item.name))?.url || '',
+          avatar_url: '',
+          region,
+          categories: [category],
+          followers,
+          follower_tier: getFollowerTier(followers),
+          content_type: 'both',
+          languages: region === 'hong_kong' ? ['粤语', '英语'] : region === 'macau' ? ['粤语', '普通话'] : ['普通话', '闽南语'],
+          bio: item.bio || items.find(i => i.title?.includes(item.name))?.snippet?.slice(0, 200) || '',
+          contact_info: [],
+          source_url: items.find(i => i.title?.includes(item.name))?.url || '',
+        } as ScrapedCreator;
+      });
+  } catch (error) {
+    console.error('批量LLM提取失败:', error);
+    return [];
   }
 }
 
@@ -411,6 +435,7 @@ export async function scrapeCreators(
 
   const allCreators: ScrapedCreator[] = [];
   const seenHandles = new Set<string>();
+  const allSearchItems: Array<{ title: string; snippet: string; url: string }> = [];
 
   // Load existing creators from database for deduplication
   const { data: existingCreators } = await supabase
@@ -434,10 +459,9 @@ export async function scrapeCreators(
     if (error) console.error('更新任务状态失败:', error.message);
   }
 
-  // Process queries in batches to find creators
+  // Phase 1: Collect all search results
+  console.log(`开始收集搜索结果...`);
   for (const queryTemplate of queries) {
-    if (allCreators.length >= targetCount) break;
-
     const query = queryTemplate
       .replace('{region}', regionName)
       .replace('{category}', categoryName);
@@ -455,20 +479,12 @@ export async function scrapeCreators(
 
       console.log(`搜索 "${query}" 返回 ${searchResponse.web_items.length} 条结果`);
 
-      // Process search results in parallel batches for efficiency
-      const items = searchResponse.web_items.filter(item => item.url);
-      
-      for (const item of items) {
-        if (allCreators.length >= targetCount) break;
+      for (const item of searchResponse.web_items) {
         if (!item.url) continue;
 
+        // Strategy 1: Extract from snippet directly (fast, no LLM needed)
         const handle = extractHandleFromUrl(item.url, platform);
-
-        // Skip if we already have this handle
-        if (handle && seenHandles.has(handle)) continue;
-
-        // Strategy 1: Extract from snippet directly (fast, no fetch needed)
-        if (handle) {
+        if (handle && !seenHandles.has(handle)) {
           const fromSnippet = extractFromSnippet(
             item.title || '',
             item.snippet || '',
@@ -481,46 +497,52 @@ export async function scrapeCreators(
             allCreators.push(fromSnippet);
             await storeCreator(supabase, fromSnippet);
             console.log(`从摘要提取: ${fromSnippet.name} (${handle})`);
-
-            if (jobId) {
-              await supabase.from('scrape_jobs').update({
-                scraped_count: allCreators.length,
-              }).eq('id', jobId);
-            }
             continue;
           }
         }
 
-        // Strategy 2: Use LLM to extract from search result (works even without profile URL)
-        if (!handle || allCreators.length < targetCount) {
-          const fromLLM = await extractCreatorFromSearchResult(
-            llmClient,
-            item.title || '',
-            item.snippet || '',
-            item.url,
-            platform, region, category
-          );
-
-          if (fromLLM) {
-            const llmHandle = fromLLM.platform_handle;
-            if (!seenHandles.has(llmHandle)) {
-              seenHandles.add(llmHandle);
-              allCreators.push(fromLLM);
-              await storeCreator(supabase, fromLLM);
-              console.log(`LLM从搜索提取: ${fromLLM.name} (${llmHandle})`);
-
-              if (jobId) {
-                await supabase.from('scrape_jobs').update({
-                  scraped_count: allCreators.length,
-                }).eq('id', jobId);
-              }
-              continue;
-            }
-          }
-        }
+        // Add to batch for LLM processing
+        allSearchItems.push({
+          title: item.title || '',
+          snippet: item.snippet || '',
+          url: item.url,
+        });
       }
     } catch (error) {
       console.error(`搜索失败: ${query}`, error);
+    }
+  }
+
+  // Phase 2: Batch LLM extraction
+  if (allSearchItems.length > 0 && allCreators.length < targetCount) {
+    console.log(`开始批量LLM提取，共 ${allSearchItems.length} 条搜索结果...`);
+
+    // Process in batches of 20
+    const batchSize = 20;
+    for (let i = 0; i < allSearchItems.length; i += batchSize) {
+      if (allCreators.length >= targetCount) break;
+
+      const batch = allSearchItems.slice(i, i + batchSize);
+      console.log(`处理批次 ${Math.floor(i / batchSize) + 1} (${batch.length} 条)...`);
+
+      const fromBatch = await extractCreatorsBatch(llmClient, batch, platform, region, category);
+
+      for (const creator of fromBatch) {
+        if (allCreators.length >= targetCount) break;
+        if (seenHandles.has(creator.platform_handle)) continue;
+
+        seenHandles.add(creator.platform_handle);
+        allCreators.push(creator);
+        await storeCreator(supabase, creator);
+        console.log(`批量LLM提取: ${creator.name} (${creator.platform_handle})`);
+      }
+
+      // Update job progress
+      if (jobId) {
+        await supabase.from('scrape_jobs').update({
+          scraped_count: allCreators.length,
+        }).eq('id', jobId);
+      }
     }
   }
 
