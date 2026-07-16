@@ -174,7 +174,8 @@ export default function Home() {
   // Stats
   const stats = useMemo(() => ({
     total: creators.length,
-    avgScore: (creators.reduce((sum, c) => sum + c.evaluation.fitScore, 0) / creators.length).toFixed(1),
+    withContact: creators.filter((c) => c.contactInfo && c.contactInfo.length > 0).length,
+    avgScore: creators.length > 0 ? (creators.reduce((sum, c) => sum + c.evaluation.fitScore, 0) / creators.length).toFixed(1) : '0.0',
     contacted: creators.filter((c) => c.outreachStatus !== 'pending').length,
     onboarded: creators.filter((c) => c.outreachStatus === 'onboarded').length,
   }), [creators]);
@@ -239,7 +240,7 @@ export default function Home() {
           {/* Stats Bar */}
           <div className="grid grid-cols-4 gap-4 mb-6">
             {[
-              { label: '收录创作者', value: stats.total, icon: Users, color: '#00a1d6', bg: '#e0f7ff' },
+              { label: '收录创作者', value: stats.total, sub: `${stats.withContact} 位有联系方式`, icon: Users, color: '#00a1d6', bg: '#e0f7ff' },
               { label: '平均适配度', value: stats.avgScore, icon: Target, color: '#10b981', bg: '#d1fae5' },
               { label: '已联系', value: stats.contacted, icon: Mail, color: '#f59e0b', bg: '#fef3c7' },
               { label: '已入驻', value: stats.onboarded, icon: TrendingUp, color: '#8b5cf6', bg: '#ede9fe' },
@@ -253,6 +254,7 @@ export default function Home() {
                   <div>
                     <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
                     <p className="text-xs text-slate-500">{stat.label}</p>
+                    {stat.sub && <p className="text-xs text-slate-400 mt-0.5">{stat.sub}</p>}
                   </div>
                 </div>
               );
