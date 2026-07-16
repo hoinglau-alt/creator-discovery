@@ -1,35 +1,287 @@
-import type { Metadata } from 'next';
-import Image from 'next/image';
+'use client';
 
-export const metadata: Metadata = {
-  title: '扣子编程 - AI 开发伙伴',
-  description: '扣子编程，你的 AI 开发伙伴已就位',
-};
+import { useState, useMemo } from 'react';
+import Sidebar from '@/components/sidebar';
+import Header from '@/components/header';
+import FilterPanel from '@/components/filter-panel';
+import CreatorCard from '@/components/creator-card';
+import CreatorDetail from '@/components/creator-detail';
+import OutreachGenerator from '@/components/outreach-generator';
+import DataTable from '@/components/data-table';
+import { mockCreators } from '@/lib/mock-data';
+import type { Creator, FilterState, OutreachStatus } from '@/lib/types';
+import { cn } from '@/lib/utils';
+import { LayoutGrid, Table, BarChart3, TrendingUp, Users, Target, Mail } from 'lucide-react';
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState('discovery');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
+  const [outreachCreator, setOutreachCreator] = useState<Creator | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [creators, setCreators] = useState<Creator[]>(mockCreators);
+
+  const [filters, setFilters] = useState<FilterState>({
+    platforms: [],
+    categories: [],
+    regions: [],
+    followerTiers: [],
+    contentType: 'all',
+    searchQuery: '',
+    outreachStatus: [],
+  });
+
+  const filteredCreators = useMemo(() => {
+    return creators.filter((c) => {
+      if (filters.platforms.length > 0 && !filters.platforms.includes(c.platform)) return false;
+      if (filters.categories.length > 0 && !c.categories.some((cat) => filters.categories.includes(cat))) return false;
+      if (filters.regions.length > 0 && !filters.regions.includes(c.region)) return false;
+      if (filters.followerTiers.length > 0 && !filters.followerTiers.includes(c.followerTier)) return false;
+      if (filters.contentType !== 'all' && c.contentType !== filters.contentType && c.contentType !== 'both') return false;
+      if (filters.searchQuery) {
+        const q = filters.searchQuery.toLowerCase();
+        return c.name.toLowerCase().includes(q) || c.platformHandle.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [creators, filters]);
+
+  const handleSearchChange = (value: string) => {
+    setFilters((prev) => ({ ...prev, searchQuery: value }));
+  };
+
+  const handleStatusChange = (id: string, status: OutreachStatus) => {
+    setCreators((prev) => prev.map((c) => c.id === id ? { ...c, outreachStatus: status } : c));
+    if (selectedCreator?.id === id) {
+      setSelectedCreator((prev) => prev ? { ...prev, outreachStatus: status } : null);
+    }
+  };
+
+  const handleGenerateOutreach = (creator: Creator) => {
+    setOutreachCreator(creator);
+  };
+
+  // Stats
+  const stats = useMemo(() => ({
+    total: creators.length,
+    avgScore: (creators.reduce((sum, c) => sum + c.evaluation.fitScore, 0) / creators.length).toFixed(1),
+    contacted: creators.filter((c) => c.outreachStatus !== 'pending').length,
+    onboarded: creators.filter((c) => c.outreachStatus === 'onboarded').length,
+  }), [creators]);
+
+  const tabConfig: Record<string, { title: string; subtitle: string }> = {
+    discovery: { title: '智能发现', subtitle: '筛选并发现优质港澳台创作者' },
+    evaluation: { title: 'AI评估分析', subtitle: '查看创作者详细评估与数据' },
+    outreach: { title: 'AI外联助手', subtitle: '生成个性化邀约并跟踪状态' },
+    management: { title: '数据管理', subtitle: '管理创作者数据库与导出' },
+  };
+
   return (
-    <div className="flex h-full items-center justify-center bg-background text-foreground transition-colors duration-300 dark:bg-background dark:text-foreground overflow-hidden min-h-screen">
-      {/* 主容器 */}
-      <main className="flex w-full h-full max-w-3xl flex-col items-center justify-center px-16 py-32 sm:items-center">
-        <div className="flex flex-col items-center justify-between gap-4">
-           <Image
-            src="https://lf-coze-web-cdn.coze.cn/obj/eden-cn/lm-lgvj/ljhwZthlaukjlkulzlp/coze-coding/icon/coze-coding.gif"
-            alt="扣子编程 Logo"
-            width={156}
-            height={130}
-          />
-          <div>
-            <div className="flex flex-col items-center gap-2 text-center sm:items-center sm:text-center">
-              <h1 className="max-w-xl text-base font-semibold leading-tight tracking-tight text-foreground dark:text-foreground">
-                应用开发中
-              </h1>
-              <p className="max-w-2xl text-sm leading-8 text-muted-foreground dark:text-muted-foreground">
-                请稍后，页面即将呈现
-              </p>
-            </div>
+    <div className="min-h-screen bg-[#f8fafc]">
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
+
+      <div className={cn('transition-all duration-300', sidebarCollapsed ? 'ml-[68px]' : 'ml-[240px]')}>
+        <Header
+          title={tabConfig[activeTab].title}
+          subtitle={tabConfig[activeTab].subtitle}
+          searchValue={filters.searchQuery}
+          onSearchChange={handleSearchChange}
+        />
+
+        <main className="p-6">
+          {/* Stats Bar */}
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            {[
+              { label: '收录创作者', value: stats.total, icon: Users, color: '#00a1d6', bg: '#e0f7ff' },
+              { label: '平均适配度', value: stats.avgScore, icon: Target, color: '#10b981', bg: '#d1fae5' },
+              { label: '已联系', value: stats.contacted, icon: Mail, color: '#f59e0b', bg: '#fef3c7' },
+              { label: '已入驻', value: stats.onboarded, icon: TrendingUp, color: '#8b5cf6', bg: '#ede9fe' },
+            ].map((stat) => {
+              const Icon = stat.icon;
+              return (
+                <div key={stat.label} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: stat.bg }}>
+                    <Icon className="w-5 h-5" style={{ color: stat.color }} />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
+                    <p className="text-xs text-slate-500">{stat.label}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
-      </main>
+
+          {/* Discovery Tab */}
+          {activeTab === 'discovery' && (
+            <div className="space-y-4">
+              <FilterPanel filters={filters} onFilterChange={setFilters} resultCount={filteredCreators.length} />
+
+              {/* View toggle */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-slate-400" />
+                  <span className="text-xs text-slate-500">
+                    共发现 <span className="font-bold text-slate-700">{filteredCreators.length}</span> 位创作者
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 p-1">
+                  <button
+                    onClick={() => setViewMode('grid')}
+                    className={cn('p-1.5 rounded-md transition-all', viewMode === 'grid' ? 'bg-[#00a1d6] text-white' : 'text-slate-400 hover:text-slate-600')}
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode('table')}
+                    className={cn('p-1.5 rounded-md transition-all', viewMode === 'table' ? 'bg-[#00a1d6] text-white' : 'text-slate-400 hover:text-slate-600')}
+                  >
+                    <Table className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Content */}
+              {viewMode === 'grid' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {filteredCreators.map((creator, i) => (
+                    <CreatorCard key={creator.id} creator={creator} onClick={setSelectedCreator} index={i} />
+                  ))}
+                </div>
+              ) : (
+                <DataTable creators={filteredCreators} onCreatorClick={setSelectedCreator} />
+              )}
+
+              {filteredCreators.length === 0 && (
+                <div className="text-center py-16">
+                  <Users className="w-12 h-12 text-slate-300 mx-auto" />
+                  <p className="text-sm text-slate-500 mt-4">没有找到匹配的创作者</p>
+                  <p className="text-xs text-slate-400 mt-1">尝试调整筛选条件</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Evaluation Tab */}
+          {activeTab === 'evaluation' && (
+            <div className="space-y-4">
+              <div className="bg-white rounded-xl border border-slate-200 p-5">
+                <h3 className="text-sm font-semibold text-slate-900 mb-1">AI 评估维度说明</h3>
+                <p className="text-xs text-slate-500 mb-4">每位创作者都会经过以下维度的AI评估分析</p>
+                <div className="grid grid-cols-3 gap-4">
+                  {[
+                    { title: '入驻适配度', desc: '基于内容风格、受众画像、平台调性综合评分', color: '#00a1d6' },
+                    { title: '合作意愿预测', desc: '根据创作者活跃度、商业化程度预测合作可能性', color: '#10b981' },
+                    { title: '增长趋势分析', desc: '基于历史数据判断粉丝增长态势', color: '#f59e0b' },
+                  ].map((item) => (
+                    <div key={item.title} className="bg-slate-50 rounded-lg p-4">
+                      <div className="w-2 h-2 rounded-full mb-2" style={{ backgroundColor: item.color }} />
+                      <h4 className="text-sm font-medium text-slate-900">{item.title}</h4>
+                      <p className="text-xs text-slate-500 mt-1">{item.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Score distribution */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5">
+                <h3 className="text-sm font-semibold text-slate-900 mb-4">适配度分布</h3>
+                <div className="flex items-end gap-2 h-32">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((score) => {
+                    const count = filteredCreators.filter((c) => c.evaluation.fitScore === score).length;
+                    const maxCount = Math.max(...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((s) => filteredCreators.filter((c) => c.evaluation.fitScore === s).length), 1);
+                    const height = (count / maxCount) * 100;
+                    const barColor = score >= 8 ? '#10b981' : score >= 6 ? '#00a1d6' : score >= 4 ? '#f59e0b' : '#ef4444';
+                    return (
+                      <div key={score} className="flex-1 flex flex-col items-center gap-1">
+                        <span className="text-[10px] text-slate-400">{count}</span>
+                        <div className="w-full rounded-t-md transition-all" style={{ height: `${Math.max(height, 4)}%`, backgroundColor: barColor + '80' }} />
+                        <span className="text-[10px] text-slate-500">{score}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Creator list sorted by score */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {[...filteredCreators].sort((a, b) => b.evaluation.fitScore - a.evaluation.fitScore).map((creator, i) => (
+                  <CreatorCard key={creator.id} creator={creator} onClick={setSelectedCreator} index={i} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Outreach Tab */}
+          {activeTab === 'outreach' && (
+            <div className="space-y-4">
+              {/* Status pipeline */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5">
+                <h3 className="text-sm font-semibold text-slate-900 mb-4">外联进度管线</h3>
+                <div className="flex items-center gap-2">
+                  {[
+                    { label: '待联系', value: 'pending', color: '#94A3B8' },
+                    { label: '已联系', value: 'contacted', color: '#3B82F6' },
+                    { label: '已回复', value: 'replied', color: '#F59E0B' },
+                    { label: '谈判中', value: 'negotiating', color: '#8B5CF6' },
+                    { label: '已入驻', value: 'onboarded', color: '#10B981' },
+                  ].map((stage, i, arr) => {
+                    const count = creators.filter((c) => c.outreachStatus === stage.value).length;
+                    return (
+                      <div key={stage.value} className="flex-1 flex items-center gap-2">
+                        <div className="flex-1 bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
+                          <div className="w-3 h-3 rounded-full mx-auto mb-1.5" style={{ backgroundColor: stage.color }} />
+                          <p className="text-lg font-bold text-slate-900">{count}</p>
+                          <p className="text-[10px] text-slate-500">{stage.label}</p>
+                        </div>
+                        {i < arr.length - 1 && <span className="text-slate-300 text-xs">→</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Creators needing outreach */}
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900 mb-3">待处理创作者</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {filteredCreators.filter((c) => c.outreachStatus === 'pending' || c.outreachStatus === 'contacted').map((creator, i) => (
+                    <CreatorCard key={creator.id} creator={creator} onClick={setSelectedCreator} index={i} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Management Tab */}
+          {activeTab === 'management' && (
+            <DataTable creators={filteredCreators} onCreatorClick={setSelectedCreator} />
+          )}
+        </main>
+      </div>
+
+      {/* Creator Detail Panel */}
+      {selectedCreator && (
+        <CreatorDetail
+          creator={selectedCreator}
+          onClose={() => setSelectedCreator(null)}
+          onStatusChange={handleStatusChange}
+          onGenerateOutreach={handleGenerateOutreach}
+        />
+      )}
+
+      {/* Outreach Generator */}
+      {outreachCreator && (
+        <OutreachGenerator
+          creator={outreachCreator}
+          onClose={() => setOutreachCreator(null)}
+        />
+      )}
     </div>
   );
 }

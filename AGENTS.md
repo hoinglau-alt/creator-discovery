@@ -1,5 +1,9 @@
 # 项目上下文
 
+### Creator Discovery & Mapping System - B站港澳台达人运营系统
+
+帮助运营团队高效发现、评估、联系港澳台地区创作者的全栈Web应用。
+
 ### 版本技术栈
 
 - **Framework**: Next.js 16 (App Router)
@@ -63,3 +67,31 @@
 
 - 模板默认预装核心组件库 `shadcn/ui`，位于`src/components/ui/`目录下
 - Next.js 项目**必须默认**采用 shadcn/ui 组件、风格和规范，**除非用户指定用其他的组件和规范。**
+
+## 项目核心模块
+
+### 关键组件
+- `src/components/sidebar.tsx` - 侧边栏导航
+- `src/components/header.tsx` - 顶部搜索栏
+- `src/components/filter-panel.tsx` - 筛选面板（平台/品类/地区/粉丝量级）
+- `src/components/creator-card.tsx` - 创作者卡片
+- `src/components/creator-detail.tsx` - 创作者详情面板（评估/联系方式/外联）
+- `src/components/outreach-generator.tsx` - AI邀约话术生成器（流式输出）
+- `src/components/data-table.tsx` - 数据管理表格（排序/筛选/CSV导出）
+
+### 数据层
+- `src/lib/types.ts` - 类型定义
+- `src/lib/constants.ts` - 平台/品类/地区等常量
+- `src/lib/mock-data.ts` - 32位模拟创作者数据
+
+### API 路由
+- `GET /api/creators` - 获取创作者列表（支持platform/region/category筛选）
+- `GET /api/creators/[id]` - 获取单个创作者详情
+- `POST /api/outreach` - AI生成邀约话术（SSE流式输出）
+- `POST /api/evaluate` - AI评估创作者适配度
+
+### LLM 集成
+- 使用 `coze-coding-dev-sdk` 的 `LLMClient`
+- 模型: `doubao-seed-2-0-mini-260215`
+- 外联话术: 流式输出 (stream)
+- 评估分析: 非流式输出 (invoke)
