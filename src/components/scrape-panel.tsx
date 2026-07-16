@@ -24,7 +24,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['youtube']);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['tech']);
   const [selectedRegions, setSelectedRegions] = useState<string[]>(['taiwan', 'hong_kong']);
-  const [targetPerQuery, setTargetPerQuery] = useState(10);
+  const [targetPerQuery, setTargetPerQuery] = useState(30);
   const [tasks, setTasks] = useState<ScrapeTask[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [totalScraped, setTotalScraped] = useState(0);
@@ -223,7 +223,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
             <input
               type="range"
               min="5"
-              max="30"
+              max="100"
               value={targetPerQuery}
               onChange={e => setTargetPerQuery(Number(e.target.value))}
               className="w-32 accent-[#00a1d6]"

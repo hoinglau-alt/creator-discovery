@@ -176,6 +176,77 @@ function extractFromSnippet(
   };
 }
 
+async function extractCreatorFromSearchResult(
+  llmClient: LLMClient,
+  title: string,
+  snippet: string,
+  url: string,
+  platform: string,
+  region: string,
+  category: string
+): Promise<ScrapedCreator | null> {
+  const regionName = REGION_MAP[region] || region;
+  const categoryName = CATEGORY_MAP[category] || category;
+
+  const prompt = `你是一个创作者数据分析专家。根据以下搜索结果信息，判断是否提到了一个具体的创作者/频道。
+
+平台: ${platform}
+目标地区: ${regionName}
+目标品类: ${categoryName}
+
+搜索结果标题: ${title}
+搜索结果摘要: ${snippet}
+URL: ${url}
+
+如果这个搜索结果明确提到了一个具体的创作者或频道（有名称、有账号handle），请提取信息。如果只是一般性文章、列表、或没有具体创作者信息，请返回 null。
+
+要求：
+1. 创作者必须来自${regionName}地区
+2. 必须有明确的频道/账号名称
+3. 尝试从标题或摘要中提取 @handle 格式的账号
+
+请以JSON格式返回，格式如下：
+{"name": "创作者名称", "handle": "@handle或账号名", "followers": 数字或0, "bio": "一句话简介"}
+
+如果没有找到具体创作者，返回: null`;
+
+  try {
+    const response = await llmClient.invoke([{ role: 'user', content: prompt }]);
+    const text = response.content?.trim() || '';
+
+    if (!text || text === 'null') return null;
+
+    // Extract JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*?\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.name || !parsed.handle) return null;
+
+    const handle = parsed.handle.startsWith('@') ? parsed.handle : `@${parsed.handle}`;
+    const followers = typeof parsed.followers === 'number' ? parsed.followers : 0;
+
+    return {
+      name: parsed.name,
+      platform,
+      platform_handle: handle,
+      platform_url: url,
+      avatar_url: '',
+      region,
+      categories: [category],
+      followers,
+      follower_tier: getFollowerTier(followers),
+      content_type: 'both',
+      languages: region === 'hong_kong' ? ['粤语', '英语'] : region === 'macau' ? ['粤语', '普通话'] : ['普通话', '闽南语'],
+      bio: parsed.bio || snippet.slice(0, 200),
+      contact_info: [],
+      source_url: url,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function scrapeCreators(
   platform: string,
   category: string,
@@ -197,6 +268,20 @@ export async function scrapeCreators(
 
   const allCreators: ScrapedCreator[] = [];
   const seenHandles = new Set<string>();
+
+  // Load existing creators from database for deduplication
+  const { data: existingCreators } = await supabase
+    .from('creators')
+    .select('platform_handle')
+    .eq('platform', platform)
+    .eq('region', region);
+
+  if (existingCreators) {
+    for (const c of existingCreators) {
+      if (c.platform_handle) seenHandles.add(c.platform_handle);
+    }
+    console.log(`数据库已有 ${existingCreators.length} 位${platform}/${region}创作者，将自动跳过`);
+  }
 
   if (jobId) {
     const { error } = await supabase.from('scrape_jobs').update({
@@ -231,66 +316,100 @@ export async function scrapeCreators(
         if (!item.url) continue;
 
         const handle = extractHandleFromUrl(item.url, platform);
-        if (!handle || seenHandles.has(handle)) continue;
+
+        // Skip if we already have this handle
+        if (handle && seenHandles.has(handle)) continue;
 
         // Strategy 1: Extract from snippet directly (fast, no fetch needed)
-        const fromSnippet = extractFromSnippet(
-          item.title || '',
-          item.snippet || '',
-          item.url,
-          platform, region, category
-        );
+        if (handle) {
+          const fromSnippet = extractFromSnippet(
+            item.title || '',
+            item.snippet || '',
+            item.url,
+            platform, region, category
+          );
 
-        if (fromSnippet) {
-          seenHandles.add(handle);
-          allCreators.push(fromSnippet);
-          await storeCreator(supabase, fromSnippet);
-          console.log(`从摘要提取: ${fromSnippet.name} (${handle})`);
-
-          if (jobId) {
-            await supabase.from('scrape_jobs').update({
-              scraped_count: allCreators.length,
-            }).eq('id', jobId);
-          }
-          continue;
-        }
-
-        // Strategy 2: Fetch page and use LLM
-        try {
-          const fetchResponse = await fetchClient.fetch(item.url);
-          if (!fetchResponse || fetchResponse.status_code !== 0) continue;
-
-          const pageText = fetchResponse.content
-            .filter((c: { type: string }) => c.type === 'text')
-            .map((c: { text?: string }) => c.text || '')
-            .join('\n')
-            .slice(0, 3000);
-
-          if (pageText.length < 100) continue;
-
-          const creator = await extractCreatorWithLLM(llmClient, {
-            platform, region, category,
-            url: item.url, handle,
-            title: item.title || '',
-            snippet: item.snippet || '',
-            pageText,
-          });
-
-          if (creator) {
+          if (fromSnippet) {
             seenHandles.add(handle);
-            allCreators.push(creator);
-            await storeCreator(supabase, creator);
-            console.log(`LLM提取: ${creator.name} (${handle})`);
+            allCreators.push(fromSnippet);
+            await storeCreator(supabase, fromSnippet);
+            console.log(`从摘要提取: ${fromSnippet.name} (${handle})`);
 
             if (jobId) {
               await supabase.from('scrape_jobs').update({
                 scraped_count: allCreators.length,
               }).eq('id', jobId);
             }
+            continue;
           }
-        } catch (e) {
-          console.log(`抓取失败 ${item.url}:`, (e as Error).message);
-          continue;
+        }
+
+        // Strategy 2: Use LLM to extract from search result (works even without profile URL)
+        if (!handle || allCreators.length < targetCount) {
+          const fromLLM = await extractCreatorFromSearchResult(
+            llmClient,
+            item.title || '',
+            item.snippet || '',
+            item.url,
+            platform, region, category
+          );
+
+          if (fromLLM) {
+            const llmHandle = fromLLM.platform_handle;
+            if (!seenHandles.has(llmHandle)) {
+              seenHandles.add(llmHandle);
+              allCreators.push(fromLLM);
+              await storeCreator(supabase, fromLLM);
+              console.log(`LLM从搜索提取: ${fromLLM.name} (${llmHandle})`);
+
+              if (jobId) {
+                await supabase.from('scrape_jobs').update({
+                  scraped_count: allCreators.length,
+                }).eq('id', jobId);
+              }
+              continue;
+            }
+          }
+        }
+
+        // Strategy 3: Fetch page and use LLM (only if we still need more)
+        if (handle && allCreators.length < targetCount) {
+          try {
+            const fetchResponse = await fetchClient.fetch(item.url);
+            if (!fetchResponse || fetchResponse.status_code !== 0) continue;
+
+            const pageText = fetchResponse.content
+              .filter((c: { type: string }) => c.type === 'text')
+              .map((c: { text?: string }) => c.text || '')
+              .join('\n')
+              .slice(0, 3000);
+
+            if (pageText.length < 100) continue;
+
+            const creator = await extractCreatorWithLLM(llmClient, {
+              platform, region, category,
+              url: item.url, handle,
+              title: item.title || '',
+              snippet: item.snippet || '',
+              pageText,
+            });
+
+            if (creator) {
+              seenHandles.add(handle);
+              allCreators.push(creator);
+              await storeCreator(supabase, creator);
+              console.log(`LLM提取: ${creator.name} (${handle})`);
+
+              if (jobId) {
+                await supabase.from('scrape_jobs').update({
+                  scraped_count: allCreators.length,
+                }).eq('id', jobId);
+              }
+            }
+          } catch (e) {
+            console.log(`抓取失败 ${item.url}:`, (e as Error).message);
+            continue;
+          }
         }
       }
     } catch (e) {
