@@ -2,6 +2,7 @@ import { SearchClient, Config as SearchConfig } from 'coze-coding-dev-sdk';
 import { FetchClient, Config as FetchConfig } from 'coze-coding-dev-sdk';
 import { LLMClient, Config as LLMConfig } from 'coze-coding-dev-sdk';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { searchChannelsByRegion, getChannels } from './youtube-api';
 
 const PLATFORM_SEARCH_QUERIES: Record<string, string[]> = {
   youtube: [
@@ -94,6 +95,87 @@ interface ScrapedCreator {
   source_url: string;
 }
 
+/**
+ * 使用 YouTube Data API 搜索频道（快速、精准）
+ */
+async function scrapeYouTubeWithAPI(
+  category: string,
+  region: string,
+  targetCount: number,
+  existingHandles: Set<string>
+): Promise<ScrapedCreator[]> {
+  const regionCode = region === 'hong_kong' ? 'HK' : region === 'taiwan' ? 'TW' : 'MO';
+  const categoryName = CATEGORY_MAP[category] || category;
+
+  console.log(`使用 YouTube API 搜索: ${regionCode} ${categoryName}`);
+
+  const creators: ScrapedCreator[] = [];
+
+  // 构建搜索查询
+  const queries = [
+    `${categoryName}`,
+    `${categoryName} 频道`,
+    `top ${categoryName}`,
+    `best ${categoryName} channel`,
+  ];
+
+  for (const query of queries) {
+    if (creators.length >= targetCount) break;
+
+    try {
+      const results = await searchChannelsByRegion(regionCode, query, 50);
+      console.log(`YouTube API "${query}" 返回 ${results.length} 个频道`);
+
+      if (results.length === 0) continue;
+
+      // 获取频道详细信息
+      const channelIds = results.slice(0, 20).map((r) => r.channelId);
+      const channels = await getChannels(channelIds);
+
+      for (const channel of channels) {
+        if (creators.length >= targetCount) break;
+        if (existingHandles.has(`@${channel.customUrl}`)) continue;
+
+        // 过滤国家（API 返回的可能不完全是目标地区）
+        if (channel.country && channel.country !== regionCode) continue;
+
+        const followerTier = getFollowerTier(channel.subscriberCount);
+
+        creators.push({
+          name: channel.title,
+          platform: 'youtube',
+          platform_handle: `@${channel.customUrl}`,
+          platform_url: `https://youtube.com/@${channel.customUrl}`,
+          avatar_url: channel.thumbnailUrl,
+          region: region,
+          categories: [category],
+          followers: channel.subscriberCount,
+          follower_tier: followerTier,
+          content_type: 'mid_long',
+          languages: region === 'hong_kong' ? ['粤语', '英语'] : region === 'taiwan' ? ['国语', '闽南语'] : ['粤语', '英语'],
+          bio: channel.description.slice(0, 500),
+          contact_info: [],
+          source_url: `https://youtube.com/@${channel.customUrl}`,
+        });
+
+        existingHandles.add(`@${channel.customUrl}`);
+      }
+    } catch (error) {
+      console.error(`YouTube API 搜索失败: ${query}`, error);
+    }
+  }
+
+  return creators;
+}
+
+function getFollowerTier(count: number): string {
+  if (count >= 1000000) return '100w+';
+  if (count >= 500000) return '50-100w';
+  if (count >= 100000) return '10-50w';
+  if (count >= 10000) return '1-10w';
+  return '<1w';
+}
+
 function extractHandleFromUrl(url: string, platform: string): string | null {
   try {
     const urlObj = new URL(url);
@@ -183,14 +265,6 @@ function extractContactInfo(pageText: string): Array<{ type: string; value: stri
   }
 
   return contacts.slice(0, 5); // Limit to 5 contacts
-}
-
-function getFollowerTier(followers: number): string {
-  if (followers >= 1000000) return '100w+';
-  if (followers >= 500000) return '50-100w';
-  if (followers >= 100000) return '10-50w';
-  if (followers >= 10000) return '1-10w';
-  return '<1w';
 }
 
 function extractContactInfoFromText(
@@ -572,6 +646,30 @@ export async function scrapeCreators(
       started_at: new Date().toISOString(),
     }).eq('id', jobId);
     if (error) console.error('更新任务状态失败:', error.message);
+  }
+
+  // Phase 0: YouTube API (fast, accurate, structured data)
+  if (platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
+    console.log('使用 YouTube Data API 抓取...');
+    const apiCreators = await scrapeYouTubeWithAPI(category, region, targetCount, seenHandles);
+    console.log(`YouTube API 找到 ${apiCreators.length} 位创作者`);
+
+    for (const creator of apiCreators) {
+      await storeCreator(supabase, creator);
+      allCreators.push(creator);
+    }
+
+    if (allCreators.length >= targetCount) {
+      const result = { scraped: allCreators.length, creators: allCreators };
+      if (jobId) {
+        await supabase.from('scrape_jobs').update({
+          status: 'completed',
+          scraped_count: allCreators.length,
+          completed_at: new Date().toISOString(),
+        }).eq('id', jobId);
+      }
+      return result;
+    }
   }
 
   // Phase 1: Collect all search results
