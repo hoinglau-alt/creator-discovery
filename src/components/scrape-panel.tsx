@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { Search, Play, Loader2, CheckCircle2, AlertCircle, Database, Zap, Globe } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Play, Loader2, CheckCircle2, AlertCircle, Database, Zap, Globe, Wifi, WifiOff, Mail, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PLATFORMS, CATEGORIES, REGIONS } from '@/lib/constants';
 
@@ -18,17 +18,40 @@ interface ScrapeTask {
   scraped: number;
   target: number;
   error?: string;
-  creators?: Array<{ name: string; platform_handle: string; followers: number }>;
+  sources?: { youtube_api: number; web_search: number };
+  creators?: Array<{
+    name: string;
+    platform_handle: string;
+    followers: number;
+    contact_info?: Array<{ type: string; value: string; reliability: string; source: string }>;
+    platform_url?: string;
+  }>;
+}
+
+interface DataStatus {
+  youtube: { available: boolean; apiKeyConfigured: boolean; error?: string };
+  webSearch: { available: boolean };
 }
 
 export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['youtube']);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(['tech']);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(['anime']);
   const [selectedRegions, setSelectedRegions] = useState<string[]>(['taiwan', 'hong_kong']);
   const [targetPerQuery, setTargetPerQuery] = useState(30);
   const [tasks, setTasks] = useState<ScrapeTask[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [totalScraped, setTotalScraped] = useState(0);
+  const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
+
+  // Check data source status on mount
+  useEffect(() => {
+    fetch('/api/data-status')
+      .then(res => res.json())
+      .then(result => {
+        if (result.success) setDataStatus(result.data);
+      })
+      .catch(() => {});
+  }, []);
 
   const togglePlatform = (p: string) => {
     setSelectedPlatforms(prev =>
@@ -55,7 +78,6 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
     const newTasks: ScrapeTask[] = [];
     const combinations: Array<{ platform: string; category: string; region: string }> = [];
 
-    // Generate all combinations (limit to avoid too many requests)
     for (const platform of selectedPlatforms) {
       for (const category of selectedCategories) {
         for (const region of selectedRegions) {
@@ -64,12 +86,11 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
       }
     }
 
-    // Limit to 6 combinations to avoid excessive API calls
     const limitedCombinations = combinations.slice(0, 6);
 
     for (const combo of limitedCombinations) {
       const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const task: ScrapeTask = {
+      newTasks.push({
         id: taskId,
         platform: combo.platform,
         category: combo.category,
@@ -77,13 +98,11 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
         status: 'pending',
         scraped: 0,
         target: targetPerQuery,
-      };
-      newTasks.push(task);
+      });
     }
 
     setTasks(newTasks);
 
-    // Execute tasks sequentially
     for (let i = 0; i < newTasks.length; i++) {
       const task = newTasks[i];
       setTasks(prev => prev.map((t, idx) =>
@@ -106,7 +125,13 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
 
         if (result.success) {
           setTasks(prev => prev.map((t, idx) =>
-            idx === i ? { ...t, status: 'completed', scraped: result.data.total, creators: result.data.creators || [] } : t
+            idx === i ? {
+              ...t,
+              status: 'completed',
+              scraped: result.data.total,
+              sources: result.data.sources,
+              creators: result.data.creators || [],
+            } : t
           ));
           setTotalScraped(prev => prev + result.data.total);
         } else {
@@ -129,6 +154,8 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
   const getCategoryLabel = (c: string) => CATEGORIES.find(x => x.value === c)?.label || c;
   const getRegionLabel = (r: string) => REGIONS.find(x => x.value === r)?.label || r;
 
+  const taskCount = Math.min(selectedPlatforms.length * selectedCategories.length * selectedRegions.length, 6);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -136,19 +163,51 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
         <div>
           <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
             <Globe className="w-5 h-5 text-[#00a1d6]" />
-            全网创作者抓取引擎
+            全网创作者 Mapping 引擎
           </h2>
           <p className="text-sm text-slate-500 mt-1">
-            通过 Web 搜索 + 页面解析 + AI 分析，从全网发现并提取创作者数据
+            YouTube API + Web Search + AI 分析，发现港澳台创作者并入库用于后续评估和外联
           </p>
         </div>
         <div className="flex items-center gap-3">
           {totalScraped > 0 && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-medium">
               <Database className="w-4 h-4" />
-              已抓取 {totalScraped} 位创作者
+              已入库 {totalScraped} 位创作者
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Data Source Status */}
+      <div className="bg-white rounded-xl border border-slate-200 px-5 py-3">
+        <div className="flex items-center gap-6 text-sm">
+          <span className="text-slate-500 font-medium">数据源状态：</span>
+          {/* YouTube API */}
+          <div className="flex items-center gap-1.5">
+            {dataStatus?.youtube.available ? (
+              <>
+                <Wifi className="w-3.5 h-3.5 text-emerald-500" />
+                <span className="text-emerald-700 font-medium">YouTube API 已连接</span>
+              </>
+            ) : dataStatus?.youtube.apiKeyConfigured ? (
+              <>
+                <WifiOff className="w-3.5 h-3.5 text-amber-500" />
+                <span className="text-amber-700 font-medium">YouTube API 不可达</span>
+                <span className="text-xs text-slate-400">(沙箱网络限制，部署后可用)</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3.5 h-3.5 text-red-500" />
+                <span className="text-red-700 font-medium">YouTube API 未配置</span>
+              </>
+            )}
+          </div>
+          {/* Web Search */}
+          <div className="flex items-center gap-1.5">
+            <Wifi className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="text-emerald-700 font-medium">Web Search 可用</span>
+          </div>
         </div>
       </div>
 
@@ -170,6 +229,9 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
                 )}
               >
                 {p.label}
+                {p.value === 'youtube' && dataStatus?.youtube.available && (
+                  <span className="ml-1 text-xs opacity-75">API</span>
+                )}
               </button>
             ))}
           </div>
@@ -232,7 +294,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
             <span className="text-sm font-medium text-slate-600 w-8">{targetPerQuery}</span>
           </div>
           <span className="text-xs text-slate-400">
-            (共 {Math.min(selectedPlatforms.length * selectedCategories.length * selectedRegions.length, 6)} 组任务)
+            (共 {taskCount} 组任务)
           </span>
         </div>
 
@@ -256,13 +318,18 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
             ) : (
               <>
                 <Zap className="w-4 h-4" />
-                开始抓取
+                开始 Mapping
               </>
             )}
           </button>
           {isRunning && (
             <span className="text-sm text-slate-500">
-              正在执行 {tasks.filter(t => t.status === 'running').length > 0 ? '第 ' + (tasks.findIndex(t => t.status === 'running') + 1) : ''} 组任务...
+              正在执行第 {tasks.findIndex(t => t.status === 'running') + 1}/{tasks.length} 组任务...
+            </span>
+          )}
+          {!isRunning && totalScraped > 0 && (
+            <span className="text-sm text-emerald-600 font-medium">
+              抓取完成！数据已入库，可在「发现」页面查看和使用
             </span>
           )}
         </div>
@@ -272,7 +339,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
       {tasks.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="text-sm font-medium text-slate-700">抓取任务进度</h3>
+            <h3 className="text-sm font-medium text-slate-700">Mapping 任务进度</h3>
             <div className="flex items-center gap-3 text-xs text-slate-500">
               <span className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-emerald-400" />
@@ -290,8 +357,8 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
           </div>
           <div className="divide-y divide-slate-50">
             {tasks.map((task, i) => (
-              <div key={task.id} className="px-5 py-3 flex items-center gap-4">
-                <div className="w-6 h-6 flex items-center justify-center">
+              <div key={task.id} className="px-5 py-4 flex items-start gap-4">
+                <div className="w-6 h-6 flex items-center justify-center mt-0.5">
                   {task.status === 'pending' && <span className="text-xs text-slate-400 font-mono">{i + 1}</span>}
                   {task.status === 'running' && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
                   {task.status === 'completed' && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
@@ -304,24 +371,48 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
                     <span className="text-slate-600">{getCategoryLabel(task.category)}</span>
                     <span className="text-slate-300">/</span>
                     <span className="text-slate-600">{getRegionLabel(task.region)}</span>
+                    {task.sources && (
+                      <span className="text-xs text-slate-400 ml-2">
+                        (API: {task.sources.youtube_api}, Web: {task.sources.web_search})
+                      </span>
+                    )}
                   </div>
                   {task.error && (
                     <p className="text-xs text-red-500 mt-0.5">{task.error}</p>
                   )}
                   {task.status === 'completed' && task.creators && task.creators.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {task.creators.map((c, idx) => (
-                        <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-xs text-slate-600">
-                          <span className="font-medium">{c.name}</span>
-                          <span className="text-slate-400">@{c.platform_handle}</span>
-                        </span>
+                    <div className="mt-2 space-y-1.5">
+                      {task.creators.slice(0, 10).map((c, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-xs">
+                          <span className="font-medium text-slate-700 min-w-[80px]">{c.name}</span>
+                          <span className="text-slate-400">{c.platform_handle}</span>
+                          {c.contact_info && c.contact_info.length > 0 && (
+                            <span className="flex items-center gap-0.5 text-emerald-600">
+                              <Mail className="w-3 h-3" />
+                              {c.contact_info[0].value}
+                            </span>
+                          )}
+                          {c.platform_url && (
+                            <a
+                              href={c.platform_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[#00a1d6] hover:underline"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
                       ))}
+                      {task.creators.length > 10 && (
+                        <span className="text-xs text-slate-400">...还有 {task.creators.length - 10} 位</span>
+                      )}
                     </div>
                   )}
                 </div>
-                <div className="text-sm text-slate-500">
+                <div className="text-sm text-slate-500 shrink-0">
                   {task.status === 'completed' && (
-                    <span className="text-emerald-600 font-medium">+{task.scraped} 位创作者</span>
+                    <span className="text-emerald-600 font-medium">+{task.scraped} 入库</span>
                   )}
                   {task.status === 'running' && (
                     <span className="text-blue-600">抓取中...</span>
@@ -338,16 +429,13 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
 
       {/* How it works */}
       <div className="bg-slate-50 rounded-xl p-5">
-        <h3 className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-2">
-          <Search className="w-4 h-4" />
-          抓取流程
-        </h3>
+        <h3 className="text-sm font-medium text-slate-700 mb-3">Mapping 流程说明</h3>
         <div className="grid grid-cols-4 gap-4">
           {[
-            { step: '1', title: 'Web 搜索', desc: '根据平台+品类+地区组合搜索创作者' },
-            { step: '2', title: '页面抓取', desc: '访问创作者主页，提取页面内容' },
-            { step: '3', title: 'AI 分析', desc: 'LLM 解析提取结构化创作者数据' },
-            { step: '4', title: '入库存储', desc: '去重后存入数据库，可用于 Mapping' },
+            { step: '1', title: 'API 搜索', desc: 'YouTube API 按品类+地区搜索频道，获取订阅数等详情' },
+            { step: '2', title: 'Web 补充', desc: 'Web Search 搜索其他平台创作者，AI 提取结构化数据' },
+            { step: '3', title: '去重入库', desc: '按平台账号去重，只保留有联系方式的创作者' },
+            { step: '4', title: '使用数据', desc: '入库后可在发现页查看、AI 评估、生成外联话术' },
           ].map(item => (
             <div key={item.step} className="text-center">
               <div className="w-8 h-8 rounded-full bg-[#00a1d6]/10 text-[#00a1d6] text-sm font-bold flex items-center justify-center mx-auto mb-2">

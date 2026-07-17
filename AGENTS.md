@@ -78,20 +78,40 @@
 - `src/components/creator-detail.tsx` - 创作者详情面板（评估/联系方式/外联）
 - `src/components/outreach-generator.tsx` - AI邀约话术生成器（流式输出）
 - `src/components/data-table.tsx` - 数据管理表格（排序/筛选/CSV导出）
+- `src/components/scrape-panel.tsx` - 全网抓取面板（YouTube API + Web Search）
+- `src/components/mapping-view.tsx` - Mapping 可视化（矩阵热力图 + 地区分布）
+- `src/components/batch-outreach.tsx` - 批量外联组件
 
 ### 数据层
 - `src/lib/types.ts` - 类型定义
 - `src/lib/constants.ts` - 平台/品类/地区等常量
 - `src/lib/mock-data.ts` - 32位模拟创作者数据
+- `src/lib/scraper.ts` - 抓取引擎（YouTube API + Web Search + LLM 提取）
+- `src/lib/youtube-api.ts` - YouTube Data API v3 客户端
 
 ### API 路由
-- `GET /api/creators` - 获取创作者列表（支持platform/region/category筛选）
+- `GET /api/creators` - 获取创作者列表（支持platform/region/category筛选，source=db读数据库）
 - `GET /api/creators/[id]` - 获取单个创作者详情
-- `POST /api/outreach` - AI生成邀约话术（SSE流式输出）
+- `POST /api/outreach` - AI生成邀约话术（SSE流式输出，本地化：港澳粤语/台湾繁体）
 - `POST /api/evaluate` - AI评估创作者适配度
+- `POST /api/scrape` - 执行抓取任务（YouTube API + Web Search）
+- `GET /api/scrape-jobs` - 获取抓取任务列表
+- `GET /api/data-status` - 获取数据源状态（YouTube API/Web Search 可用性）
+- `POST /api/export` - 导出 CSV/Excel
+
+### 数据流架构
+1. **抓取入库**：通过 Mapping 引擎抓取创作者 → 去重 → 只保留有联系方式的 → 存入 Supabase
+2. **数据使用**：前端自动检测数据库数据 → 有数据则使用数据库 → 否则使用演示数据
+3. **功能串联**：发现 → AI评估 → 外联话术 → 批量外联，全部基于同一份数据库数据
+
+### 数据源优先级
+- **YouTube**：优先使用 YouTube Data API v3（需配置 YOUTUBE_API_KEY 环境变量）
+- **所有平台**：YouTube API 不可用时，降级到 Web Search + LLM 提取
+- **其他平台**（Instagram/TikTok/X/抖音/小红书）：通过 Web Search + LLM 提取
 
 ### LLM 集成
 - 使用 `coze-coding-dev-sdk` 的 `LLMClient`
 - 模型: `doubao-seed-2-0-mini-260215`
-- 外联话术: 流式输出 (stream)
+- 外联话术: 流式输出 (stream)，本地化（港澳粤语/台湾繁体中文）
 - 评估分析: 非流式输出 (invoke)
+- 抓取提取: 非流式输出 (invoke)，批量从搜索结果提取创作者信息

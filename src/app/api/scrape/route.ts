@@ -13,7 +13,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Run scraping
     const result = await scrapeCreators(platform, category, region, targetCount);
 
     return NextResponse.json({
@@ -21,6 +20,7 @@ export async function POST(request: NextRequest) {
       data: {
         total: result.total,
         creators: result.creators,
+        sources: result.sources,
       },
     });
   } catch (error) {

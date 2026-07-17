@@ -1,11 +1,11 @@
 /**
- * Creator Scraper - Web Search + LLM Extraction
- * 通过 Web 搜索 + LLM 批量提取发现创作者
+ * Creator Scraper - YouTube API + Web Search + LLM
+ * 多数据源创作者发现引擎
  */
 
 import { SearchClient, LLMClient } from 'coze-coding-dev-sdk';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { searchChannelsByRegion, type YouTubeSearchResult } from '@/lib/youtube-api';
+import { discoverYouTubeCreators, checkYouTubeAPIStatus } from '@/lib/youtube-api';
 
 // ==================== Types ====================
 
@@ -33,6 +33,7 @@ export interface ScrapedCreator {
 export interface ScrapeResult {
   creators: ScrapedCreator[];
   total: number;
+  sources: { youtube_api: number; web_search: number };
 }
 
 // ==================== Singleton Clients ====================
@@ -94,31 +95,15 @@ const REGION_NAMES: Record<string, string> = {
   taiwan: '台湾',
 };
 
-// ==================== Search Queries ====================
+const REGION_LANG_MAP: Record<string, string[]> = {
+  hong_kong: ['粤语', '英语'],
+  macau: ['粤语', '国语', '英语'],
+  taiwan: ['国语', '英语'],
+};
 
-function getSearchQueries(platform: string, category: string, region: string): string[] {
-  const platformName = PLATFORM_NAMES[platform] || platform;
-  const categoryName = CATEGORY_NAMES[category] || category;
-  const regionName = REGION_NAMES[region] || region;
+// ==================== YouTube API Source ====================
 
-  const baseQueries = [
-    `${regionName} ${categoryName} ${platformName} 创作者 推荐 2024 2025`,
-    `${regionName} ${platformName} ${categoryName} 频道 博主 排行`,
-    `${platformName} ${categoryName} ${regionName} 优质账号 关注`,
-  ];
-
-  const extraQueries = [
-    `${regionName} ${categoryName} YouTuber 推荐`,
-    `${platformName} ${categoryName} 香港 台湾 澳门 博主`,
-    `${categoryName} 创作者 ${regionName} 粉丝多`,
-  ];
-
-  return platform === 'youtube' ? [...baseQueries, ...extraQueries] : baseQueries;
-}
-
-// ==================== YouTube API ====================
-
-async function scrapeYouTubeChannels(
+async function scrapeFromYouTubeAPI(
   category: string,
   region: string,
   targetCount: number
@@ -126,41 +111,59 @@ async function scrapeYouTubeChannels(
   const creators: ScrapedCreator[] = [];
 
   try {
-    const channels = await searchChannelsByRegion(region, category, targetCount);
+    const results = await discoverYouTubeCreators(category, region, targetCount);
 
-    for (const channel of channels) {
-      const handle = channel.channelCustomUrl || '';
-      if (!handle) continue;
-
+    for (const { channel, contacts } of results) {
+      const handle = channel.customUrl || `@${channel.title.replace(/\s+/g, '')}`;
       const platformHandle = handle.startsWith('@') ? handle : `@${handle}`;
-      const platformUrl = `https://youtube.com/${platformHandle}`;
 
       creators.push({
-        name: channel.channelTitle,
+        name: channel.title,
         platform: 'youtube',
         platform_handle: platformHandle,
-        platform_url: platformUrl,
+        platform_url: `https://youtube.com/${platformHandle}`,
         avatar_url: channel.thumbnailUrl || '',
         region,
         categories: [category],
-        followers: 0,
-        follower_tier: '<1w',
+        followers: channel.subscriberCount,
+        follower_tier: getFollowerTier(channel.subscriberCount),
         content_type: 'mid_long',
-        languages: region === 'hong_kong' ? ['粤语', '英语'] : region === 'taiwan' ? ['国语', '英语'] : ['粤语', '国语', '英语'],
+        languages: REGION_LANG_MAP[region] || ['国语', '英语'],
         bio: channel.description || '',
-        contact_info: [],
+        contact_info: contacts,
       });
     }
+
+    console.log(`[YouTube API] 获取 ${creators.length} 位创作者`);
   } catch (error) {
-    console.error(`YouTube API 抓取失败：${error}`);
+    console.error(`[YouTube API] 抓取失败：${error}`);
   }
 
   return creators;
 }
 
-// ==================== Web Search + LLM ====================
+// ==================== Web Search Source ====================
 
-async function searchCreators(
+function getSearchQueries(platform: string, category: string, region: string): string[] {
+  const platformName = PLATFORM_NAMES[platform] || platform;
+  const categoryName = CATEGORY_NAMES[category] || category;
+  const regionName = REGION_NAMES[region] || region;
+
+  const queries = [
+    `${regionName} ${categoryName} ${platformName} 创作者 推荐`,
+    `${regionName} ${platformName} ${categoryName} 频道 博主`,
+    `${platformName} ${categoryName} ${regionName} 优质账号`,
+  ];
+
+  if (platform === 'youtube') {
+    queries.push(`${regionName} ${categoryName} YouTuber`);
+    queries.push(`${categoryName} 创作者 ${regionName}`);
+  }
+
+  return queries;
+}
+
+async function scrapeFromWebSearch(
   platform: string,
   category: string,
   region: string,
@@ -171,7 +174,6 @@ async function searchCreators(
   const allResults: Array<{ title: string; url: string; snippet: string }> = [];
   const seenUrls = new Set<string>();
 
-  // 收集搜索结果
   for (const query of queries) {
     try {
       const response = await client.webSearch(query, 20, false);
@@ -188,25 +190,22 @@ async function searchCreators(
         }
       }
     } catch (error) {
-      console.error(`搜索失败 "${query}": ${error}`);
+      console.error(`[Web Search] 搜索失败 "${query}": ${error}`);
     }
   }
 
-  console.log(`搜索 "${category}/${region}" 收集 ${allResults.length} 条结果`);
+  console.log(`[Web Search] "${category}/${region}" 收集 ${allResults.length} 条结果`);
 
   if (allResults.length === 0) {
     return [];
   }
 
-  // 批量 LLM 提取
-  const creators = await extractCreatorsBatch(allResults, platform, category, region, targetCount);
-
-  return creators;
+  return extractCreatorsFromResults(allResults, platform, category, region, targetCount);
 }
 
-// ==================== LLM Batch Extraction ====================
+// ==================== LLM Extraction ====================
 
-async function extractCreatorsBatch(
+async function extractCreatorsFromResults(
   results: Array<{ title: string; url: string; snippet: string }>,
   platform: string,
   category: string,
@@ -223,29 +222,30 @@ async function extractCreatorsBatch(
       .map((r, idx) => `[${idx + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`)
       .join('\n\n');
 
-    const prompt = `从以下搜索结果中提取${REGION_NAMES[region] || region}地区的${CATEGORY_NAMES[category] || category}创作者信息。
+    const categoryName = CATEGORY_NAMES[category] || category;
+    const regionName = REGION_NAMES[region] || region;
 
-**重要：只提取真正属于"${CATEGORY_NAMES[category] || category}"品类的创作者！**
-- 科技数码：手机、电脑、数码产品测评
-- 动漫二次元：动画、漫画、Cosplay、二次元文化
-- 美食：料理、探店、食谱
-- 美妆时尚：化妆、护肤、穿搭
-- 游戏：电玩、手游、游戏攻略
-- 其他品类按常理判断
+    const prompt = `从以下搜索结果中提取${regionName}地区的「${categoryName}」品类创作者。
 
-如果搜索结果中的创作者不属于该品类，请跳过。
+**严格要求：**
+1. 只提取真正属于「${categoryName}」品类的创作者（如科技数码=手机/电脑/数码测评，动漫二次元=动画/漫画/Cosplay/ACG）
+2. 必须是${regionName}地区的创作者
+3. 必须能识别出平台账号（handle）
 
+搜索结果：
 ${content}
 
-请以 JSON 数组格式返回，每个创作者包含：
-- name: 创作者名称
-- handle: 平台账号（@开头）
-- followers: 粉丝数（数字）
-- bio: 简介（50 字内）
-- contact: 联系方式（邮箱/社交账号，如果没有留空字符串）
-- url: 主页链接
+返回 JSON 数组，每个元素：
+{
+  "name": "创作者名称",
+  "handle": "@平台账号",
+  "followers": 粉丝数(数字，无法判断填0),
+  "bio": "50字内简介",
+  "contact": "商务邮箱或联系方式(没有填空字符串)",
+  "url": "主页链接"
+}
 
-只返回 JSON 数组，不要其他内容。最多返回${targetCount}个创作者。`;
+只返回 JSON 数组，最多${targetCount}个。不符合条件的不要返回。`;
 
     try {
       const response = await getLLMClient().invoke([
@@ -257,8 +257,6 @@ ${content}
 
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        const platformName = PLATFORM_NAMES[platform] || platform;
-        const regionName = REGION_NAMES[region] || region;
 
         for (const item of parsed) {
           if (!item.name || !item.handle) continue;
@@ -266,9 +264,22 @@ ${content}
           const platformHandle = item.handle.startsWith('@') ? item.handle : `@${item.handle}`;
           const platformUrl = item.url || (platform === 'youtube' ? `https://youtube.com/${platformHandle}` : '');
 
-          const contactInfo = item.contact
-            ? [{ type: 'email', value: item.contact, reliability: 'medium', source: '搜索提取' }]
-            : [];
+          const contactInfo: Array<{ type: string; value: string; reliability: string; source: string }> = [];
+          if (item.contact && typeof item.contact === 'string' && item.contact.includes('@')) {
+            contactInfo.push({
+              type: 'email',
+              value: item.contact,
+              reliability: 'medium',
+              source: 'Web 搜索提取',
+            });
+          } else if (item.contact && typeof item.contact === 'string' && item.contact.length > 0) {
+            contactInfo.push({
+              type: 'social',
+              value: item.contact,
+              reliability: 'low',
+              source: 'Web 搜索提取',
+            });
+          }
 
           allCreators.push({
             name: item.name,
@@ -281,14 +292,14 @@ ${content}
             followers: item.followers || 0,
             follower_tier: getFollowerTier(item.followers || 0),
             content_type: 'both',
-            languages: region === 'hong_kong' ? ['粤语', '英语'] : region === 'taiwan' ? ['国语', '英语'] : ['粤语', '国语', '英语'],
+            languages: REGION_LANG_MAP[region] || ['国语', '英语'],
             bio: item.bio || '',
             contact_info: contactInfo,
           });
         }
       }
     } catch (error) {
-      console.error(`LLM 提取失败：${error}`);
+      console.error(`[LLM] 提取失败：${error}`);
     }
   }
 
@@ -329,7 +340,7 @@ async function storeCreator(creator: ScrapedCreator): Promise<boolean> {
     .limit(1);
 
   if (existing && existing.length > 0) {
-    // 更新
+    // 更新已有记录
     const { error } = await supabase
       .from('creators')
       .update({
@@ -350,7 +361,7 @@ async function storeCreator(creator: ScrapedCreator): Promise<boolean> {
     }
     return true;
   } else {
-    // 插入
+    // 插入新记录
     const { error } = await supabase.from('creators').insert({
       name: creator.name,
       platform: creator.platform,
@@ -406,7 +417,7 @@ async function updateJobStatus(
   errorMessage?: string
 ): Promise<void> {
   const supabase = getSupabaseClient();
-  const updates: any = { status };
+  const updates: Record<string, unknown> = { status };
   if (scrapedCount !== undefined) updates.scraped_count = scrapedCount;
   if (errorMessage) updates.error_message = errorMessage;
   if (status === 'running') updates.started_at = new Date().toISOString();
@@ -426,23 +437,35 @@ export async function scrapeCreators(
   const jobId = await createScrapeJob(platform, category, region, targetCount);
   await updateJobStatus(jobId, 'running');
 
+  const sources = { youtube_api: 0, web_search: 0 };
+
   try {
     // 获取已有的 handle，用于去重
     const existingHandles = await getExistingHandles(platform, region);
-    console.log(`数据库已有 ${existingHandles.size} 位${platform}/${region}创作者，将自动跳过`);
+    console.log(`数据库已有 ${existingHandles.size} 位 ${platform}/${region} 创作者，将自动跳过`);
 
     let creators: ScrapedCreator[] = [];
 
-    // YouTube 优先使用 API
+    // YouTube 平台优先使用 API
     if (platform === 'youtube') {
-      creators = await scrapeYouTubeChannels(category, region, targetCount);
-      console.log(`YouTube API 获取 ${creators.length} 位创作者`);
+      const apiStatus = await checkYouTubeAPIStatus();
+      console.log(`[YouTube API] 状态: available=${apiStatus.available}, configured=${apiStatus.apiKeyConfigured}`);
+
+      if (apiStatus.available) {
+        creators = await scrapeFromYouTubeAPI(category, region, targetCount);
+        sources.youtube_api = creators.length;
+        console.log(`[YouTube API] 成功获取 ${creators.length} 位创作者`);
+      } else {
+        console.log(`[YouTube API] 不可用 (${apiStatus.error})，改用 Web Search`);
+      }
     }
 
-    // 如果 API 不够，用 Web 搜索补充
+    // 不够的话用 Web Search 补充（非 YouTube 平台直接用 Web Search）
     if (creators.length < targetCount) {
-      const webCreators = await searchCreators(platform, category, region, targetCount - creators.length);
+      const remaining = targetCount - creators.length;
+      const webCreators = await scrapeFromWebSearch(platform, category, region, remaining);
       creators = [...creators, ...webCreators];
+      sources.web_search = webCreators.length;
     }
 
     // 去重 + 过滤
@@ -450,16 +473,12 @@ export async function scrapeCreators(
     const uniqueCreators: ScrapedCreator[] = [];
 
     for (const creator of creators) {
-      if (existingHandles.has(creator.platform_handle)) {
-        continue; // 跳过已存在的
-      }
-      if (seenHandles.has(creator.platform_handle)) {
-        continue; // 跳过本次重复的
-      }
-      // 只保留有联系方式的创作者
-      if (!creator.contact_info || creator.contact_info.length === 0) {
-        continue;
-      }
+      // 跳过数据库中已存在的
+      if (existingHandles.has(creator.platform_handle)) continue;
+      // 跳过本次重复的
+      if (seenHandles.has(creator.platform_handle)) continue;
+      // 只保留有联系方式的
+      if (!creator.contact_info || creator.contact_info.length === 0) continue;
 
       seenHandles.add(creator.platform_handle);
       uniqueCreators.push(creator);
@@ -474,11 +493,13 @@ export async function scrapeCreators(
 
     await updateJobStatus(jobId, 'completed', storedCount);
 
-    console.log(`抓取完成：共 ${uniqueCreators.length} 位创作者，${storedCount} 位已入库`);
+    console.log(`抓取完成：共 ${uniqueCreators.length} 位有效创作者（有联系方式），${storedCount} 位已入库`);
+    console.log(`数据来源：YouTube API ${sources.youtube_api} + Web Search ${sources.web_search}`);
 
     return {
       creators: uniqueCreators,
       total: storedCount,
+      sources,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -510,4 +531,21 @@ export async function getAllScrapeJobs() {
 
   if (error) throw error;
   return data;
+}
+
+// ==================== API Status Check ====================
+
+export async function getDataSourceStatus() {
+  const youtubeStatus = await checkYouTubeAPIStatus();
+
+  return {
+    youtube: {
+      available: youtubeStatus.available,
+      apiKeyConfigured: youtubeStatus.apiKeyConfigured,
+      error: youtubeStatus.error,
+    },
+    webSearch: {
+      available: true, // Web Search 始终可用
+    },
+  };
 }
