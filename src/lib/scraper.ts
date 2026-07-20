@@ -5,7 +5,7 @@
 
 import { SearchClient, LLMClient } from 'coze-coding-dev-sdk';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { discoverYouTubeCreators, checkYouTubeAPIStatus } from '@/lib/youtube-api';
+import { checkYouTubeAPIStatus, searchChannelsByRegion } from '@/lib/youtube-api';
 
 // ==================== Types ====================
 
@@ -101,6 +101,15 @@ const REGION_LANG_MAP: Record<string, string[]> = {
   taiwan: ['国语', '英语'],
 };
 
+const PLATFORM_DOMAINS: Record<string, string[]> = {
+  youtube: ['youtube.com', 'youtu.be'],
+  instagram: ['instagram.com'],
+  tiktok: ['tiktok.com'],
+  x: ['x.com', 'twitter.com'],
+  douyin: ['douyin.com'],
+  xiaohongshu: ['xiaohongshu.com', 'xhslink.com'],
+};
+
 // ==================== YouTube API Source ====================
 
 async function scrapeFromYouTubeAPI(
@@ -111,22 +120,25 @@ async function scrapeFromYouTubeAPI(
   const creators: ScrapedCreator[] = [];
 
   try {
-    const results = await discoverYouTubeCreators(category, region, targetCount);
+    const results = await searchChannelsByRegion(category, region, targetCount);
 
-    for (const { channel, contacts } of results) {
-      const handle = channel.customUrl || `@${channel.title.replace(/\s+/g, '')}`;
+    for (const channel of results) {
+      const handle = channel.channelCustomUrl || `@${channel.channelTitle.replace(/\s+/g, '')}`;
       const platformHandle = handle.startsWith('@') ? handle : `@${handle}`;
 
+      // Extract contact info from description
+      const contacts = extractContactInfoFromText(channel.description || '');
+
       creators.push({
-        name: channel.title,
+        name: channel.channelTitle,
         platform: 'youtube',
         platform_handle: platformHandle,
         platform_url: `https://youtube.com/${platformHandle}`,
         avatar_url: channel.thumbnailUrl || '',
         region,
         categories: [category],
-        followers: channel.subscriberCount,
-        follower_tier: getFollowerTier(channel.subscriberCount),
+        followers: 0,
+        follower_tier: 'unknown',
         content_type: 'mid_long',
         languages: REGION_LANG_MAP[region] || ['国语', '英语'],
         bio: channel.description || '',
@@ -149,16 +161,15 @@ function getSearchQueries(platform: string, category: string, region: string): s
   const categoryName = CATEGORY_NAMES[category] || category;
   const regionName = REGION_NAMES[region] || region;
 
-  const queries = [
-    `${regionName} ${categoryName} ${platformName} 创作者 推荐`,
-    `${regionName} ${platformName} ${categoryName} 频道 博主`,
-    `${platformName} ${categoryName} ${regionName} 优质账号`,
-  ];
+  const platformDomain = PLATFORM_DOMAINS[platform] || '';
+  const siteFilter = platformDomain ? ` site:${platformDomain}` : '';
 
-  if (platform === 'youtube') {
-    queries.push(`${regionName} ${categoryName} YouTuber`);
-    queries.push(`${categoryName} 创作者 ${regionName}`);
-  }
+  const queries = [
+    `${regionName} ${categoryName}${siteFilter} 博主 推荐`,
+    `${regionName} ${categoryName} ${platformName} 账号${siteFilter}`,
+    `${categoryName} ${regionName} YouTuber 频道`,
+    `${regionName} ${categoryName} 创作者 排行`,
+  ];
 
   return queries;
 }
