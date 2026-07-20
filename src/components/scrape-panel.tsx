@@ -194,7 +194,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
               <>
                 <WifiOff className="w-3.5 h-3.5 text-amber-500" />
                 <span className="text-amber-700 font-medium">YouTube API 不可达</span>
-                <span className="text-xs text-slate-400">(沙箱网络限制，部署后可用)</span>
+                <span className="text-xs text-slate-400">(网络不可达，已自动使用 Web Search)</span>
               </>
             ) : (
               <>
