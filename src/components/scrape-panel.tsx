@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Play, Loader2, CheckCircle2, AlertCircle, Database, Zap, Globe, Wifi, WifiOff, Mail, ExternalLink } from 'lucide-react';
+import { Play, Loader2, CheckCircle2, AlertCircle, Database, Zap, Globe, Wifi, WifiOff, Mail, ExternalLink, Youtube } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PLATFORMS, CATEGORIES, REGIONS } from '@/lib/constants';
 
@@ -42,6 +42,12 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [totalScraped, setTotalScraped] = useState(0);
   const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
+  const [ytMapping, setYtMapping] = useState(false);
+  const [ytResults, setYtResults] = useState<{
+    total: number;
+    stored: number;
+    creators: Array<{ name: string; handle: string; subscribers: number; contacts: string[] }>;
+  } | null>(null);
 
   // Check data source status on mount
   useEffect(() => {
@@ -69,6 +75,45 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
     setSelectedRegions(prev =>
       prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]
     );
+  };
+
+  const startYoutubeMapping = async () => {
+    if (selectedCategories.length === 0 || selectedRegions.length === 0) {
+      alert('请先选择品类和地区');
+      return;
+    }
+    setYtMapping(true);
+    setYtResults(null);
+
+    let totalStored = 0;
+    let totalFound = 0;
+    const allCreators: Array<{ name: string; handle: string; subscribers: number; contacts: string[] }> = [];
+
+    for (const region of selectedRegions) {
+      for (const category of selectedCategories) {
+        try {
+          const res = await fetch('/api/youtube-mapper', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ category, region, maxResults: 15 }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            totalStored += data.data.stored;
+            totalFound += data.data.total;
+            allCreators.push(...data.data.creators);
+          }
+        } catch (err) {
+          console.error(`YouTube mapping failed for ${category}/${region}:`, err);
+        }
+      }
+    }
+
+    setYtResults({ total: totalFound, stored: totalStored, creators: allCreators });
+    setYtMapping(false);
+    if (totalStored > 0) {
+      onScrapeComplete?.();
+    }
   };
 
   const startScraping = useCallback(async () => {
@@ -209,6 +254,89 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
             <span className="text-emerald-700 font-medium">Web Search 可用</span>
           </div>
         </div>
+      </div>
+
+      {/* YouTube Direct Mapping */}
+      <div className="bg-gradient-to-r from-red-50 to-white rounded-xl border border-red-100 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+              <Youtube className="w-4 h-4 text-red-600" />
+              YouTube 直接 Mapping
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              直接调用 YouTube API，搜索并抓取创作者信息（需要 Vercel 部署）
+            </p>
+          </div>
+          <button
+            onClick={startYoutubeMapping}
+            disabled={ytMapping || selectedCategories.length === 0 || selectedRegions.length === 0}
+            className={cn(
+              'px-4 py-2 rounded-lg text-sm font-medium transition-all',
+              ytMapping
+                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                : 'bg-red-600 text-white hover:bg-red-700 shadow-sm'
+            )}
+          >
+            {ytMapping ? 'Mapping 中...' : '开始 YouTube Mapping'}
+          </button>
+        </div>
+
+        {ytMapping && (
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>正在调用 YouTube API，请稍候...</span>
+          </div>
+        )}
+
+        {ytResults && (
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-slate-600">
+                找到 <span className="font-semibold text-slate-800">{ytResults.total}</span> 位创作者
+              </span>
+              <span className="text-slate-600">
+                入库 <span className="font-semibold text-emerald-600">{ytResults.stored}</span> 位
+              </span>
+              <span className="text-slate-500">
+                跳过 {ytResults.total - ytResults.stored} 位（已存在或无联系方式）
+              </span>
+            </div>
+
+            {ytResults.creators.length > 0 && (
+              <div className="bg-white rounded-lg border border-slate-200 max-h-64 overflow-y-auto">
+                <div className="divide-y divide-slate-100">
+                  {ytResults.creators.map((c, i) => (
+                    <div key={i} className="px-4 py-2.5 flex items-center justify-between hover:bg-slate-50">
+                      <div className="flex items-center gap-3">
+                        <Youtube className="w-4 h-4 text-red-500" />
+                        <div>
+                          <div className="text-sm font-medium text-slate-800">{c.name}</div>
+                          <div className="text-xs text-slate-500">{c.handle}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-slate-700">
+                          {c.subscribers >= 1000000 ? `${(c.subscribers / 1000000).toFixed(1)}M` :
+                           c.subscribers >= 1000 ? `${(c.subscribers / 1000).toFixed(1)}K` : c.subscribers}
+                        </div>
+                        <div className="text-xs text-emerald-600">
+                          {c.contacts.length > 0 ? c.contacts[0] : '无联系方式'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {ytResults.stored > 0 && (
+              <div className="text-xs text-emerald-600 font-medium">
+                ✓ 数据已入库，可在「发现」页面查看和使用
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Configuration */}

@@ -66,3 +66,44 @@ export const OPERATORS = [
   '陈思',
   '未分配',
 ];
+
+// YouTube search keywords per category
+export const CATEGORY_KEYWORDS_YT: Record<string, string[]> = {
+  tech: ['科技評測', '3C開箱', '科技新聞'],
+  food: ['美食探店', '料理教學', '吃播'],
+  lifestyle: ['日常Vlog', '生活分享', '生活紀錄'],
+  gaming: ['遊戲實況', '遊戲攻略', '遊戲評測'],
+  beauty: ['美妝教學', '彩妝', '穿搭分享'],
+  music: ['翻唱', '原創音樂', '音樂MV'],
+  education: ['知識分享', '科普', '教學頻道'],
+  comedy: ['搞笑', '喜劇', '脫口秀'],
+  entertainment: ['影評', '娛樂新聞', '影視解說'],
+  anime: ['動漫', '二次元', 'Cosplay'],
+  fitness: ['健身教學', '運動', '瑜伽'],
+  travel: ['旅行Vlog', '旅遊攻略', '背包客'],
+  pets: ['寵物', '貓咪', '狗狗'],
+  automotive: ['汽車評測', '改車', '機車'],
+  finance: ['理財', '投資', '財經'],
+  photography: ['攝影教學', '攝影作品', '相機評測'],
+  diy: ['DIY', '手作', '手工藝'],
+  dance: ['舞蹈', '編舞', 'Dance Cover'],
+  parenting: ['育兒', '親子', '媽媽'],
+  home: ['家居', '裝潢', '室內設計'],
+};
+
+// Region to language mapping
+export const REGION_LANG_MAP: Record<string, string> = {
+  hong_kong: 'yue',
+  macau: 'yue',
+  taiwan: 'zh-Hant',
+};
+
+// Platform domain mapping
+export const PLATFORM_DOMAINS: Record<string, string> = {
+  youtube: 'youtube.com',
+  instagram: 'instagram.com',
+  tiktok: 'tiktok.com',
+  x: 'x.com',
+  douyin: 'douyin.com',
+  xiaohongshu: 'xiaohongshu.com',
+};
