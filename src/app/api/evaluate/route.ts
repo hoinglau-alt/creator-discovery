@@ -36,8 +36,8 @@ export async function POST(request: NextRequest) {
     diy: '手工DIY', dance: '舞蹈', parenting: '亲子育儿', home: '家居装修',
   };
 
-  const catLabels = (categories as string[]).map((c: string) => categoryLabels[c] || c).join('、');
-  const styleLabels = (contentStyle as string[]).join('、');
+  const catLabels = Array.isArray(categories) ? (categories as string[]).map((c: string) => categoryLabels[c] || c).join('、') : String(categories || '');
+  const styleLabels = Array.isArray(contentStyle) ? (contentStyle as string[]).join('、') : '';
 
   const systemPrompt = `你是一位专业的内容分析师，负责评估港澳台创作者入驻B站的适配度。
 请严格按照以下JSON格式输出评估结果，不要输出任何其他内容：

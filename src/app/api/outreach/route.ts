@@ -38,8 +38,8 @@ export async function POST(request: NextRequest) {
     diy: '手工DIY', dance: '舞蹈', parenting: '亲子育儿', home: '家居装修',
   };
 
-  const catLabels = (categories as string[]).map((c: string) => categoryLabels[c] || c).join('、');
-  const styleLabels = (contentStyle as string[]).join('、');
+  const catLabels = Array.isArray(categories) ? (categories as string[]).map((c: string) => categoryLabels[c] || c).join('、') : String(categories || '');
+  const styleLabels = Array.isArray(contentStyle) ? (contentStyle as string[]).join('、') : '';
 
   // 根据地区设置语言风格
   const isHKMacau = region === 'hong_kong' || region === 'macau';
