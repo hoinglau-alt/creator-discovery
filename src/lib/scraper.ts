@@ -6,6 +6,7 @@
 import { SearchClient, LLMClient } from 'coze-coding-dev-sdk';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { checkYouTubeAPIStatus, searchChannelsByRegion } from '@/lib/youtube-api';
+import type { ContactInfo } from '@/lib/types';
 
 // ==================== Types ====================
 
@@ -127,7 +128,7 @@ async function scrapeFromYouTubeAPI(
       const platformHandle = handle.startsWith('@') ? handle : `@${handle}`;
 
       // Extract contact info from description
-      const contacts = extractContactInfoFromText(channel.description || '');
+      const contacts = extractContactInfo(channel.description || '');
 
       creators.push({
         name: channel.channelTitle,
@@ -155,6 +156,18 @@ async function scrapeFromYouTubeAPI(
 }
 
 // ==================== Web Search Source ====================
+
+function extractContactInfo(text: string): ContactInfo[] {
+  const contacts: ContactInfo[] = [];
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+  const emails = text.match(emailRegex);
+  if (emails) {
+    for (const email of emails) {
+      contacts.push({ type: 'email', value: email, reliability: 'high', source: '频道描述' });
+    }
+  }
+  return contacts;
+}
 
 function getSearchQueries(platform: string, category: string, region: string): string[] {
   const platformName = PLATFORM_NAMES[platform] || platform;

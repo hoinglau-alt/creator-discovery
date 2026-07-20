@@ -1,10 +1,8 @@
 /**
  * YouTube Data API v3 客户端
  * 用于搜索和获取频道信息
- * 请求策略：直接 fetch → FetchClient 平台代理 → 抛出错误
+ * 部署到 Vercel/Railway 等无出站限制的平台后可用
  */
-
-import { FetchClient } from 'coze-coding-dev-sdk';
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'AIzaSyCRSa1RfVbrilpoXkNVsGAlIglluW4erI';
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
@@ -41,26 +39,9 @@ async function youtubeFetch(path: string, params: Record<string, string>) {
     '?' +
     new URLSearchParams({ key: YOUTUBE_API_KEY, ...params }).toString();
 
-  // 策略 1：直接 fetch（部署环境可能已解除限制）
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (res.ok) return res.json();
-  } catch {
-    // 直接 fetch 失败，继续尝试策略 2
-  }
-
-  // 策略 2：通过 FetchClient 平台代理（托管集成，网络权限不同）
-  try {
-    const fetchClient = new FetchClient();
-    const result = await fetchClient.fetch(url);
-    if (result?.text) {
-      return JSON.parse(result.text);
-    }
-  } catch {
-    // FetchClient 也失败
-  }
-
-  throw new Error('YouTube API: 所有请求方式均失败');
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`YouTube API ${res.status}: ${res.statusText}`);
+  return res.json();
 }
 
 export async function searchChannelsByRegion(
