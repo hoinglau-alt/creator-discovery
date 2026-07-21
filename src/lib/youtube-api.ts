@@ -1,19 +1,11 @@
 /**
  * YouTube Data API v3 客户端
  * 用于搜索和获取频道信息
- * 优先使用 FetchClient（平台托管服务），降级到直接 fetch
+ * 使用原生 fetch，兼容 Vercel 部署环境
  */
-
-import { FetchClient } from 'coze-coding-dev-sdk';
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'AIzaSyCRSa1RfVbrilpoXkNVsGAlIglluW4erI';
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
-
-let _fetchClient: InstanceType<typeof FetchClient> | null = null;
-function getFetchClient() {
-  if (!_fetchClient) _fetchClient = new FetchClient();
-  return _fetchClient;
-}
 
 async function youtubeFetch(path: string, params: Record<string, string>) {
   const url =
@@ -22,34 +14,20 @@ async function youtubeFetch(path: string, params: Record<string, string>) {
     '?' +
     new URLSearchParams({ key: YOUTUBE_API_KEY, ...params }).toString();
 
-  // 策略 1：直接 fetch
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (res.ok) return res.json();
-  } catch {
-    // 直接 fetch 失败，尝试 FetchClient
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(10000),
+    headers: {
+      'Accept': 'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error('YouTube API error:', res.status, errorText);
+    throw new Error(`YouTube API error: ${res.status}`);
   }
 
-  // 策略 2：FetchClient（平台托管，可能有不同网络权限）
-  try {
-    const client = getFetchClient();
-    const result = await client.fetch(url);
-    // FetchClient 返回的是网页提取结果，尝试从 text 类型内容中获取
-    if (result?.content?.length) {
-      const textContent = result.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('');
-      if (textContent) {
-        try { return JSON.parse(textContent); } catch {}
-      }
-    }
-    // 也尝试 title 字段（如果是 API 响应可能被解析到 title）
-    if (result?.title) {
-      return { items: [], pageInfo: { totalResults: 0 } };
-    }
-  } catch {
-    // FetchClient 也失败
-  }
-
-  throw new Error('YouTube API unreachable');
+  return res.json();
 }
 
 // ==================== Types ====================
@@ -132,9 +110,8 @@ export async function checkYouTubeAPIStatus(): Promise<{
   apiKeyConfigured: boolean;
   error?: string;
 }> {
-  if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY.length < 10) {
-    return { available: false, apiKeyConfigured: false };
-  }
+  const apiKey = process.env.YOUTUBE_API_KEY || 'AIzaSyCRSa1RfVbrilpoXkNVsGAlIglluW4erI';
+  const apiKeyConfigured = !!apiKey;
 
   try {
     const data = await youtubeFetch('/search', {
@@ -143,11 +120,16 @@ export async function checkYouTubeAPIStatus(): Promise<{
       q: 'test',
       maxResults: '1',
     });
-    if (data?.items !== undefined) {
-      return { available: true, apiKeyConfigured: true };
-    }
-    return { available: false, apiKeyConfigured: true, error: 'unexpected response' };
-  } catch (e: any) {
-    return { available: false, apiKeyConfigured: true, error: e.message || 'fetch failed' };
+
+    return {
+      available: true,
+      apiKeyConfigured,
+    };
+  } catch (err: any) {
+    return {
+      available: false,
+      apiKeyConfigured,
+      error: err.message || 'Unknown error',
+    };
   }
 }
