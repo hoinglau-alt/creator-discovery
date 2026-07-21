@@ -172,7 +172,7 @@ async function scrapeFromYouTubeAPI(
         if (!handle) continue;
 
         // 用 channels.list 获取详情（消耗 Queries 配额）
-        const channels = await getChannelDetails(handle);
+        const channels = await getChannelDetails([handle]);
         if (channels.length > 0) {
           const channel = channels[0];
           creator.followers = channel.subscriberCount || creator.followers;
