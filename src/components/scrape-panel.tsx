@@ -92,7 +92,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
     for (const region of selectedRegions) {
       for (const category of selectedCategories) {
         try {
-          const res = await fetch('/api/youtube-mapper', {
+          const res = await fetch('/api/youtube-mapper-test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ category, region, maxResults: 15 }),
