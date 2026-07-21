@@ -5,7 +5,7 @@
 
 import { SearchClient, LLMClient } from 'coze-coding-dev-sdk';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { checkYouTubeAPIStatus, searchChannelsByRegion } from '@/lib/youtube-api';
+import { checkYouTubeAPIStatus, searchChannelsByRegion, getChannelDetails } from '@/lib/youtube-api';
 import type { ContactInfo } from '@/lib/types';
 
 // ==================== Types ====================
