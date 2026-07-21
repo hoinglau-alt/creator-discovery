@@ -260,41 +260,27 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
         </div>
       </div>
 
-      {/* YouTube Direct Mapping */}
+      {/* YouTube Direct Mapping - Integrated with main flow */}
       <div className="bg-gradient-to-r from-red-50 to-white rounded-xl border border-red-100 p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-              <Youtube className="w-4 h-4 text-red-600" />
-              YouTube 直接 Mapping
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              直接调用 YouTube API，搜索并抓取创作者信息（需要 Vercel 部署）
-            </p>
-          </div>
-          <button
-            onClick={startYoutubeMapping}
-            disabled={ytMapping || selectedCategories.length === 0 || selectedRegions.length === 0}
-            className={cn(
-              'px-4 py-2 rounded-lg text-sm font-medium transition-all',
-              ytMapping
-                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                : 'bg-red-600 text-white hover:bg-red-700 shadow-sm'
-            )}
-          >
-            {ytMapping ? 'Mapping 中...' : '开始 YouTube Mapping'}
-          </button>
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+            <Youtube className="w-4 h-4 text-red-600" />
+            YouTube 直接 Mapping
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">
+            使用上方选择的平台、品类、地区，直接调用 YouTube API 搜索创作者
+          </p>
         </div>
 
         {ytMapping && (
-          <div className="flex items-center gap-2 text-sm text-slate-600">
+          <div className="flex items-center gap-2 text-sm text-slate-600 mb-3">
             <Loader2 className="w-4 h-4 animate-spin" />
             <span>正在调用 YouTube API，请稍候...</span>
           </div>
         )}
 
         {ytResults && (
-          <div className="mt-4 space-y-3">
+          <div className="space-y-3">
             <div className="flex items-center gap-4 text-sm">
               <span className="text-slate-600">
                 找到 <span className="font-semibold text-slate-800">{ytResults.total}</span> 位创作者
@@ -341,6 +327,12 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
             )}
           </div>
         )}
+
+        <div className="mt-3 pt-3 border-t border-red-100">
+          <p className="text-xs text-slate-500 mb-2">
+             提示：使用上方选择的品类（{selectedCategories.length} 个）和地区（{selectedRegions.length} 个），点击「开始 Mapping」即可
+          </p>
+        </div>
       </div>
 
       {/* Configuration */}
