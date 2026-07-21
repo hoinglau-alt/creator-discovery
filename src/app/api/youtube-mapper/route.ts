@@ -101,12 +101,10 @@ export async function POST(request: Request) {
 
     console.log(`[YouTube Mapper] Total results: ${results.length}`);
 
-    // Store in database - SKIP FOR NOW, just return results
+    // Store in database
     const stored: string[] = [];
     const skipped: string[] = [];
 
-    // TODO: Re-enable database storage after testing
-    /*
     if (results.length > 0) {
       try {
         const supabase = getSupabaseClient();
@@ -160,20 +158,19 @@ export async function POST(request: Request) {
         // Continue even if DB fails - return results anyway
       }
     }
-    */
 
     return NextResponse.json({
       success: true,
       data: {
         total: results.length,
-        stored: 0,
-        skipped: 0,
+        stored: stored.length,
+        skipped: skipped.length,
         creators: results.map(r => ({
           name: r.name,
           handle: r.handle,
           subscribers: r.subscribers,
           contacts: r.contactInfo.map(c => c.value),
-          stored: false,
+          stored: stored.includes(r.handle),
         })),
       },
     });
