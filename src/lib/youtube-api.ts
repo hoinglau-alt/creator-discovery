@@ -111,7 +111,7 @@ export async function checkYouTubeAPIStatus(): Promise<{
   apiKeyConfigured: boolean;
   error?: string;
 }> {
-  const apiKey = process.env.YOUTUBE_API_KEY || 'AIzaSyCRSa1RfVbrilpoXkNVsGAlIglluW4erI';
+  const apiKey = 'AIzaSyDX9c5L__bfa9SfsGzWalyNAmPqurFtSq8';
   const apiKeyConfigured = !!apiKey;
 
   try {
