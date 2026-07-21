@@ -121,35 +121,79 @@ async function scrapeFromYouTubeAPI(
   const creators: ScrapedCreator[] = [];
 
   try {
-    const results = await searchChannelsByRegion(category, region, targetCount);
+    // 方案：Web Search 搜索 + YouTube API 获取详情（避免 Search 配额限制）
+    const client = getSearchClient();
+    const queries = getSearchQueries('youtube', category, region);
+    const allResults: Array<{ title: string; url: string; snippet: string }> = [];
+    const seenUrls = new Set<string>();
 
-    for (const channel of results) {
-      const handle = channel.channelCustomUrl || `@${channel.channelTitle.replace(/\s+/g, '')}`;
-      const platformHandle = handle.startsWith('@') ? handle : `@${handle}`;
-
-      // Extract contact info from description
-      const contacts = extractContactInfo(channel.description || '');
-
-      creators.push({
-        name: channel.channelTitle,
-        platform: 'youtube',
-        platform_handle: platformHandle,
-        platform_url: `https://youtube.com/${platformHandle}`,
-        avatar_url: channel.thumbnailUrl || '',
-        region,
-        categories: [category],
-        followers: 0,
-        follower_tier: 'unknown',
-        content_type: 'mid_long',
-        languages: REGION_LANG_MAP[region] || ['国语', '英语'],
-        bio: channel.description || '',
-        contact_info: contacts,
-      });
+    // 1. Web Search 搜索创作者
+    for (const query of queries) {
+      try {
+        const response = await client.webSearch(query, 20, false);
+        if (response.web_items) {
+          for (const result of response.web_items) {
+            const url = result.url || '';
+            if (!url || seenUrls.has(url)) continue;
+            seenUrls.add(url);
+            allResults.push({
+              title: result.title || '',
+              url,
+              snippet: result.snippet || '',
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`[Web Search] 搜索失败 "${query}": ${error}`);
+      }
     }
 
-    console.log(`[YouTube API] 获取 ${creators.length} 位创作者`);
+    console.log(`[YouTube Hybrid] Web Search 收集 ${allResults.length} 条结果`);
+
+    if (allResults.length === 0) {
+      return [];
+    }
+
+    // 2. 从搜索结果提取创作者名字
+    const extractedCreators = await extractCreatorsFromResults(
+      allResults,
+      'youtube',
+      category,
+      region,
+      targetCount
+    );
+
+    console.log(`[YouTube Hybrid] 提取 ${extractedCreators.length} 位创作者`);
+
+    // 3. 用 YouTube API 获取频道详情（消耗 Queries 配额，不是 Search 配额）
+    for (const creator of extractedCreators) {
+      try {
+        const handle = creator.platform_handle || '';
+        if (!handle) continue;
+
+        // 用 channels.list 获取详情（消耗 Queries 配额）
+        const channels = await getChannelDetails(handle);
+        if (channels.length > 0) {
+          const channel = channels[0];
+          creator.followers = channel.subscriberCount || creator.followers;
+          creator.bio = channel.description || creator.bio;
+          creator.avatar_url = channel.thumbnailUrl || creator.avatar_url;
+
+          // 提取联系方式
+          const contacts = extractContactInfo(channel.description || '');
+          if (contacts.length > 0) {
+            creator.contact_info = contacts;
+          }
+        }
+      } catch (error) {
+        console.error(`[YouTube API] 获取 ${creator.name} 详情失败：${error}`);
+      }
+    }
+
+    creators.push(...extractedCreators);
+    console.log(`[YouTube Hybrid] 最终获取 ${creators.length} 位创作者`);
   } catch (error) {
-    console.error(`[YouTube API] 抓取失败：${error}`);
+    console.error(`[YouTube Hybrid] 抓取失败：${error}`);
   }
 
   return creators;
