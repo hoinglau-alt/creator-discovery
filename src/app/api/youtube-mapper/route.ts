@@ -45,8 +45,11 @@ export async function POST(request: Request) {
     for (const keyword of keywords.slice(0, 3)) {
       const query = `${keyword} ${lang} ${region === 'taiwan' ? '台灣' : region === 'macau' ? '澳門' : '香港'}`;
 
+      console.log(`[YouTube Mapper] Searching: "${query}" for region ${regionCode}`);
+
       try {
         const searchResults = await searchChannelsByRegion(query, regionCode, Math.ceil(maxResults / keywords.length));
+        console.log(`[YouTube Mapper] Found ${searchResults.length} channels for "${query}"`);
 
         // Collect unique channel IDs
         const channelIds: string[] = [];
@@ -90,11 +93,13 @@ export async function POST(request: Request) {
           if (results.length >= maxResults) break;
         }
       } catch (err) {
-        console.error(`Search failed for keyword "${keyword}":`, err);
+        console.error(`[YouTube Mapper] Search failed for keyword "${keyword}":`, err);
       }
 
       if (results.length >= maxResults) break;
     }
+
+    console.log(`[YouTube Mapper] Total results: ${results.length}`);
 
     // Store in database - SKIP FOR NOW, just return results
     const stored: string[] = [];
