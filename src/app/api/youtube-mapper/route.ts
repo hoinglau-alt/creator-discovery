@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
     const keywords = CATEGORY_KEYWORDS_YT[category] || [category];
     const lang = REGION_LANG_MAP[region] || 'zh-Hant';
-    const regionCode = region === 'taiwan' ? 'TW' : 'HK';
+    const regionCode = region === 'taiwan' ? 'TW' : region === 'macau' ? 'MO' : 'HK';
 
     const results: Array<{
       name: string;
@@ -41,14 +41,14 @@ export async function POST(request: Request) {
     }> = [];
     const seenChannelIds = new Set<string>();
 
-    // Search for channels using multiple keywords
-    for (const keyword of keywords.slice(0, 3)) {
+    // Search for channels using multiple keywords - increase search count
+    for (const keyword of keywords.slice(0, 5)) {
       const query = `${keyword} ${lang} ${region === 'taiwan' ? '台灣' : region === 'macau' ? '澳門' : '香港'}`;
 
       console.log(`[YouTube Mapper] Searching: "${query}" for region ${regionCode}`);
 
       try {
-        const searchResults = await searchChannelsByRegion(query, regionCode, Math.ceil(maxResults / keywords.length));
+        const searchResults = await searchChannelsByRegion(query, regionCode, 25);
         console.log(`[YouTube Mapper] Found ${searchResults.length} channels for "${query}"`);
 
         // Collect unique channel IDs
