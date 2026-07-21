@@ -4,7 +4,8 @@
  * 使用原生 fetch，兼容 Vercel 部署环境
  */
 
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || 'AIzaSyCRSa1RfVbrilpoXkNVsGAlIglluW4erI';
+// YouTube API Key（硬编码，不依赖环境变量）
+const YOUTUBE_API_KEY = 'AIzaSyDX9c5L__bfa9SfsGzWalyNAmPqurFtSq8';
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 
 async function youtubeFetch(path: string, params: Record<string, string>) {
