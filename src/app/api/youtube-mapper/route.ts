@@ -96,10 +96,12 @@ export async function POST(request: Request) {
       if (results.length >= maxResults) break;
     }
 
-    // Store in database
+    // Store in database - SKIP FOR NOW, just return results
     const stored: string[] = [];
     const skipped: string[] = [];
 
+    // TODO: Re-enable database storage after testing
+    /*
     if (results.length > 0) {
       try {
         const supabase = getSupabaseClient();
@@ -153,19 +155,20 @@ export async function POST(request: Request) {
         // Continue even if DB fails - return results anyway
       }
     }
+    */
 
     return NextResponse.json({
       success: true,
       data: {
         total: results.length,
-        stored: stored.length,
-        skipped: skipped.length,
+        stored: 0,
+        skipped: 0,
         creators: results.map(r => ({
           name: r.name,
           handle: r.handle,
           subscribers: r.subscribers,
           contacts: r.contactInfo.map(c => c.value),
-          stored: stored.includes(r.handle),
+          stored: false,
         })),
       },
     });
