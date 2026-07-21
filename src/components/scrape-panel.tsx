@@ -102,9 +102,13 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
             totalStored += data.data.stored;
             totalFound += data.data.total;
             allCreators.push(...data.data.creators);
+          } else {
+            console.error(`YouTube mapping API error for ${category}/${region}:`, data.error);
+            alert(`YouTube Mapping 失败：${data.error || '未知错误'}`);
           }
         } catch (err) {
           console.error(`YouTube mapping failed for ${category}/${region}:`, err);
+          alert(`YouTube Mapping 请求失败：${err instanceof Error ? err.message : String(err)}`);
         }
       }
     }
