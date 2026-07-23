@@ -244,7 +244,7 @@ async function scrapeFromWebSearch(
 
   for (const query of queries) {
     try {
-      const response = await client.webSearch(query, 20, false);
+      const response = await client.webSearch(query, 50, false);
       if (response.web_items) {
         for (const result of response.web_items) {
           const url = result.url || '';
@@ -309,7 +309,7 @@ ${content}
   "handle": "@平台账号",
   "followers": 粉丝数(数字，无法判断填0),
   "bio": "50字内简介",
-  "contact": "商务邮箱或联系方式(没有填空字符串)",
+  "contact": "商务邮箱/微信/社交媒体账号 (没有填\"待补充\")",
   "url": "主页链接"
 }
 
@@ -346,6 +346,14 @@ ${content}
               value: item.contact,
               reliability: 'low',
               source: 'Web 搜索提取',
+            });
+          } else {
+            // 即使没有联系方式也保存，标记为"待补充"
+            contactInfo.push({
+              type: 'pending',
+              value: '待补充',
+              reliability: 'none',
+              source: '待人工补充',
             });
           }
 
@@ -545,8 +553,7 @@ export async function scrapeCreators(
       if (existingHandles.has(creator.platform_handle)) continue;
       // 跳过本次重复的
       if (seenHandles.has(creator.platform_handle)) continue;
-      // 只保留有联系方式的
-      if (!creator.contact_info || creator.contact_info.length === 0) continue;
+      // 保留所有创作者（包括没有联系方式的，标记为"待补充"）
 
       seenHandles.add(creator.platform_handle);
       uniqueCreators.push(creator);
