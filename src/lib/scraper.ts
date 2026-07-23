@@ -130,7 +130,7 @@ async function scrapeFromYouTubeAPI(
     // 1. Web Search 搜索创作者
     for (const query of queries) {
       try {
-        const response = await client.webSearch(query, 20, false);
+        const response = await client.webSearch(query, 50, false);
         if (response.web_items) {
           for (const result of response.web_items) {
             const url = result.url || '';

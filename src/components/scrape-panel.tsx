@@ -37,7 +37,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['youtube']);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['anime']);
   const [selectedRegions, setSelectedRegions] = useState<string[]>(['taiwan', 'hong_kong']);
-  const [targetPerQuery, setTargetPerQuery] = useState(30);
+  const [targetPerQuery, setTargetPerQuery] = useState(100);
   const [batchMode, setBatchMode] = useState(false); // 批量模式
   const [estimatedCount, setEstimatedCount] = useState(0); // 预估数量
   const [tasks, setTasks] = useState<ScrapeTask[]>([]);
@@ -208,7 +208,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
   const taskCount = Math.min(selectedPlatforms.length * selectedCategories.length * selectedRegions.length, 6);
   
   // 批量模式下，每组任务生成 5 个搜索关键词，每个关键词搜索 30 个结果
-  const estimatedPerTask = batchMode ? 5 * 30 : targetPerQuery;
+  const estimatedPerTask = batchMode ? 5 * 100 : targetPerQuery;
   const estimatedTotal = taskCount * estimatedPerTask;
 
   return (
@@ -416,7 +416,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
             <input
               type="range"
               min="5"
-              max="100"
+              max="200"
               value={targetPerQuery}
               onChange={e => setTargetPerQuery(Number(e.target.value))}
               className="w-32 accent-[#00a1d6]"
@@ -425,7 +425,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
           </div>
           {batchMode && (
             <span className="text-xs text-emerald-600 font-medium">
-              批量模式：每组 ~{5 * 30} 个关键词结果
+              批量模式：每组 ~{5 * 100} 个关键词结果
             </span>
           )}
           <span className="text-xs text-slate-400">
@@ -446,7 +446,7 @@ export function ScrapePanel({ onScrapeComplete }: ScrapePanelProps) {
             <span className="text-sm font-medium text-slate-700">批量模式</span>
           </label>
           <span className="text-xs text-slate-500">
-            {batchMode ? '每组生成 5 个搜索关键词，每个关键词搜索 30 个结果（适合大规模 Mapping）' : '每组使用 1 个搜索关键词'}
+            {batchMode ? '每组生成 5 个搜索关键词，每个关键词搜索 100 个结果（适合大规模 Mapping）' : '每组使用 1 个搜索关键词'}
           </span>
         </div>
 
